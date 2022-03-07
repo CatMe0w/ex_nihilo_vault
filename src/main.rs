@@ -12,7 +12,7 @@ enum Variant {
 }
 
 enum UserType {
-    UserId(i32),
+    UserId(i64),
     Username(String),
     Nickname(String),
     Avatar(String),
@@ -26,7 +26,7 @@ enum AdminLogCategory {
 
 #[derive(Serialize, Deserialize)]
 struct User {
-    user_id: i32,
+    user_id: i64,
     username: String,
     nickname: String,
     avatar: String,
@@ -40,18 +40,18 @@ struct Content {
 
 #[derive(Serialize, Deserialize)]
 struct Thread {
-    thread_id: i32,
+    thread_id: i64,
     title: String,
-    user_id: i32,
+    user_id: i64,
     reply_num: i32,
     is_good: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Post {
-    post_id: i32,
+    post_id: i64,
     floor: i32,
-    user_id: i32,
+    user_id: i64,
     content: Vec<Content>,
     time: String,
     comment_num: i32,
@@ -61,11 +61,11 @@ struct Post {
 
 #[derive(Serialize, Deserialize)]
 struct Comment {
-    comment_id: i32,
-    user_id: i32,
+    comment_id: i64,
+    user_id: i64,
     content: Vec<Content>,
     time: String,
-    post_id: i32,
+    post_id: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -73,11 +73,11 @@ struct ApiRequest {
     request_type: String,
     variant: Option<String>,
     page: i32,
-    thread_id: Option<i32>,
-    post_id: Option<i32>,
+    thread_id: Option<i64>,
+    post_id: Option<i64>,
     admin_log_category: Option<String>,
     admin_log_hide_the_showdown: Option<bool>,
-    user_id: Option<i32>,
+    user_id: Option<i64>,
     username: Option<String>,
     nickname: Option<String>,
     avatar: Option<String>,
@@ -90,7 +90,7 @@ fn respond_thread(variant: Variant, page: i32) -> Result<Json<serde_json::Value>
 
 fn respond_post(
     variant: Variant,
-    thread_id: i32,
+    thread_id: i64,
     page: i32,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
@@ -99,7 +99,7 @@ fn respond_post(
 
 fn respond_comment(
     variant: Variant,
-    post_id: i32,
+    post_id: i64,
     page: i32,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
