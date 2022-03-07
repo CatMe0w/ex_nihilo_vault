@@ -4,7 +4,11 @@ extern crate rocket;
 use rocket::http::Status;
 use rocket::response::content::Html;
 use rocket::serde::{json::Json, Deserialize, Serialize};
+use rocket_sync_db_pools::{database, rusqlite};
 use serde_json::json;
+
+#[database("vault")]
+struct Vault(rusqlite::Connection);
 
 enum Variant {
     Standard,
@@ -126,7 +130,9 @@ fn rickroll() -> Html<&'static str> {
 }
 
 #[post("/", format = "json", data = "<api_request>")]
-fn request_dispatcher(api_request: Json<ApiRequest>) -> Result<Json<serde_json::Value>, Status> {
+async fn request_dispatcher(
+    api_request: Json<ApiRequest>,
+) -> Result<Json<serde_json::Value>, Status> {
     let request_type = api_request.request_type.as_str();
     let page = api_request.page;
     match request_type {
@@ -213,6 +219,7 @@ fn request_dispatcher(api_request: Json<ApiRequest>) -> Result<Json<serde_json::
 #[launch]
 fn rocket() -> _ {
     rocket::build()
+        .attach(Vault::fairing())
         .mount("/", routes![rickroll])
         .mount("/", routes![request_dispatcher])
 }
