@@ -87,12 +87,12 @@ struct ApiRequest {
     avatar: Option<String>,
 }
 
-fn respond_thread(variant: Variant, page: i32) -> Result<Json<serde_json::Value>, Status> {
+async fn respond_thread(variant: Variant, page: i32) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
     Ok(Json(json!({})))
 }
 
-fn respond_post(
+async fn respond_post(
     variant: Variant,
     thread_id: i64,
     page: i32,
@@ -101,7 +101,7 @@ fn respond_post(
     Ok(Json(json!({})))
 }
 
-fn respond_comment(
+async fn respond_comment(
     variant: Variant,
     post_id: i64,
     page: i32,
@@ -110,12 +110,12 @@ fn respond_comment(
     Ok(Json(json!({})))
 }
 
-fn respond_user(user_type: UserType) -> Result<Json<serde_json::Value>, Status> {
+async fn respond_user(user_type: UserType) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
     Ok(Json(json!({})))
 }
 
-fn response_admin_log(
+async fn respond_admin_log(
     admin_log_category: AdminLogCategory,
     admin_log_hide_the_showdown: bool,
     page: i32,
@@ -125,7 +125,7 @@ fn response_admin_log(
 }
 
 #[get("/")]
-fn rickroll() -> Html<&'static str> {
+async fn rickroll() -> Html<&'static str> {
     Html("<!doctype html><meta name='referrer' content='no-referrer'><meta http-equiv='refresh' content='0; URL=https://www.bilibili.com/video/av202867917'>")
 }
 
@@ -139,8 +139,8 @@ async fn request_dispatcher(
         "thread" => {
             if let Some(variant) = &api_request.variant {
                 match variant.as_str() {
-                    "standard" => respond_thread(Variant::Standard, page),
-                    "time_machine" => respond_thread(Variant::TimeMachine, page),
+                    "standard" => respond_thread(Variant::Standard, page).await,
+                    "time_machine" => respond_thread(Variant::TimeMachine, page).await,
                     _ => Err(Status::UnprocessableEntity),
                 }
             } else {
@@ -151,8 +151,8 @@ async fn request_dispatcher(
             if let (Some(variant), Some(thread_id)) = (&api_request.variant, api_request.thread_id)
             {
                 match variant.as_str() {
-                    "standard" => respond_post(Variant::Standard, thread_id, page),
-                    "time_machine" => respond_post(Variant::TimeMachine, thread_id, page),
+                    "standard" => respond_post(Variant::Standard, thread_id, page).await,
+                    "time_machine" => respond_post(Variant::TimeMachine, thread_id, page).await,
                     _ => Err(Status::UnprocessableEntity),
                 }
             } else {
@@ -162,8 +162,8 @@ async fn request_dispatcher(
         "comment" => {
             if let (Some(variant), Some(post_id)) = (&api_request.variant, api_request.post_id) {
                 match variant.as_str() {
-                    "standard" => respond_comment(Variant::Standard, post_id, page),
-                    "time_machine" => respond_comment(Variant::TimeMachine, post_id, page),
+                    "standard" => respond_comment(Variant::Standard, post_id, page).await,
+                    "time_machine" => respond_comment(Variant::TimeMachine, post_id, page).await,
                     _ => Err(Status::UnprocessableEntity),
                 }
             } else {
@@ -173,13 +173,13 @@ async fn request_dispatcher(
         "user" => {
             // priority: user_id -> avatar -> username -> nickname
             if let Some(user_id) = api_request.user_id {
-                respond_user(UserType::UserId(user_id))
+                respond_user(UserType::UserId(user_id)).await
             } else if let Some(avatar) = api_request.avatar.clone() {
-                respond_user(UserType::Avatar(avatar))
+                respond_user(UserType::Avatar(avatar)).await
             } else if let Some(username) = api_request.username.clone() {
-                respond_user(UserType::Username(username))
+                respond_user(UserType::Username(username)).await
             } else if let Some(nickname) = api_request.nickname.clone() {
-                respond_user(UserType::Nickname(nickname))
+                respond_user(UserType::Nickname(nickname)).await
             } else {
                 Err(Status::UnprocessableEntity)
             }
@@ -190,21 +190,18 @@ async fn request_dispatcher(
                 api_request.admin_log_hide_the_showdown,
             ) {
                 match admin_log_category.as_str() {
-                    "post" => response_admin_log(
-                        AdminLogCategory::Post,
-                        admin_log_hide_the_showdown,
-                        page,
-                    ),
-                    "user" => response_admin_log(
-                        AdminLogCategory::User,
-                        admin_log_hide_the_showdown,
-                        page,
-                    ),
-                    "bawu" => response_admin_log(
-                        AdminLogCategory::Bawu,
-                        admin_log_hide_the_showdown,
-                        page,
-                    ),
+                    "post" => {
+                        respond_admin_log(AdminLogCategory::Post, admin_log_hide_the_showdown, page)
+                            .await
+                    }
+                    "user" => {
+                        respond_admin_log(AdminLogCategory::User, admin_log_hide_the_showdown, page)
+                            .await
+                    }
+                    "bawu" => {
+                        respond_admin_log(AdminLogCategory::Bawu, admin_log_hide_the_showdown, page)
+                            .await
+                    }
                     _ => Err(Status::UnprocessableEntity),
                 }
             } else {
@@ -220,6 +217,5 @@ async fn request_dispatcher(
 fn rocket() -> _ {
     rocket::build()
         .attach(Vault::fairing())
-        .mount("/", routes![rickroll])
-        .mount("/", routes![request_dispatcher])
+        .mount("/", routes![rickroll, request_dispatcher])
 }
