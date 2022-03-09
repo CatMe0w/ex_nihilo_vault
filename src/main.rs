@@ -29,6 +29,37 @@ enum AdminLogCategory {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AdminLog {
+    Post {
+        thread_id: i64,
+        post_id: Option<i64>,
+        title: String,
+        content_preview: String,
+        username: String,
+        post_time: String,
+        operation: String,
+        operator: String,
+        operation_time: String,
+    },
+    User {
+        avatar: String,
+        username: String,
+        operation: String,
+        duration: String,
+        operator: String,
+        operation_time: String,
+    },
+    Bawu {
+        avatar: String,
+        username: String,
+        operation: String,
+        operator: String,
+        operation_time: String,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
 struct User {
     user_id: i64,
     username: String,
@@ -37,9 +68,29 @@ struct User {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Content {
+struct UserRecord {
+    #[serde(rename = "type")]
     _type: String,
     content: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ContentItem {
+    #[serde(rename = "type")]
+    _type: String,
+    #[serde(flatten)]
+    content: Content,
+}
+
+#[derive(Serialize, Deserialize)]
+enum Content {
+    Text(String),
+    Emoticon { id: String, description: String },
+    Username { text: String, user_id: i64 },
+    Url { url: String, text: String },
+    Image(String),
+    Video(String),
+    Audio(String),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -56,7 +107,7 @@ struct Post {
     post_id: i64,
     floor: i32,
     user_id: i64,
-    content: Vec<Content>,
+    content: Vec<ContentItem>,
     time: String,
     comment_num: i32,
     signature: String,
@@ -67,7 +118,7 @@ struct Post {
 struct Comment {
     comment_id: i64,
     user_id: i64,
-    content: Vec<Content>,
+    content: Vec<ContentItem>,
     time: String,
     post_id: i64,
 }
@@ -87,9 +138,29 @@ struct ApiRequest {
     avatar: Option<String>,
 }
 
+async fn get_thread_metadata(thread_id: i64) -> (String, i64, i32, bool) {
+    // TODO: implement
+    let title: String = String::from("");
+    let reply_num: i32 = 0;
+    let is_good: bool = false;
+    let user_id: i64 = 0;
+    (title, user_id, reply_num, is_good)
+}
+
+async fn get_user_metadata(user_type: UserType) -> (i64, String, String, String) {
+    // TODO: implement
+    let user_id: i64 = 0;
+    let username: String = String::from("");
+    let nickname: String = String::from("");
+    let avatar: String = String::from("");
+    (user_id, username, nickname, avatar)
+}
+
 async fn respond_thread(variant: Variant, page: i32) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
-    Ok(Json(json!({})))
+    let threads: Vec<Thread> = Vec::new();
+    let users: Vec<User> = Vec::new();
+    Ok(Json(json!({"threads": threads, "users": users})))
 }
 
 async fn respond_post(
@@ -98,7 +169,18 @@ async fn respond_post(
     page: i32,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
-    Ok(Json(json!({})))
+    let (title, user_id, reply_num, is_good) = get_thread_metadata(thread_id).await;
+    let posts: Vec<Post> = Vec::new();
+    let comments: Vec<Comment> = Vec::new();
+    let users: Vec<User> = Vec::new();
+    Ok(Json(json!({
+        "title": title,
+        "user_id": user_id,
+        "reply_num": reply_num,
+        "is_good": is_good,
+        "comments": comments,
+        "users": users
+    })))
 }
 
 async fn respond_comment(
@@ -107,12 +189,22 @@ async fn respond_comment(
     page: i32,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
-    Ok(Json(json!({})))
+    let comments: Vec<Comment> = Vec::new();
+    let users: Vec<User> = Vec::new();
+    Ok(Json(json!({"comments": comments, "users": users})))
 }
 
 async fn respond_user(user_type: UserType) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
-    Ok(Json(json!({})))
+    let (user_id, username, nickname, avatar) = get_user_metadata(user_type).await;
+    let records: Vec<UserRecord> = Vec::new();
+    Ok(Json(json!({
+        "user_id": user_id,
+        "username": username,
+        "nickname": nickname,
+        "avatar": avatar,
+        "records": records
+    })))
 }
 
 async fn respond_admin_log(
@@ -121,7 +213,20 @@ async fn respond_admin_log(
     page: i32,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
-    Ok(Json(json!({})))
+    match admin_log_category {
+        AdminLogCategory::Post => {
+            let admin_logs: Vec<AdminLog> = Vec::new();
+            Ok(Json(json!(admin_logs)))
+        }
+        AdminLogCategory::User => {
+            let admin_logs: Vec<AdminLog> = Vec::new();
+            Ok(Json(json!(admin_logs)))
+        }
+        AdminLogCategory::Bawu => {
+            let admin_logs: Vec<AdminLog> = Vec::new();
+            Ok(Json(json!(admin_logs)))
+        }
+    }
 }
 
 #[get("/")]
