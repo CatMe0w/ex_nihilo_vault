@@ -29,7 +29,7 @@ enum AdminLogCategory {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 enum AdminLog {
     Post {
         thread_id: i64,
@@ -68,10 +68,23 @@ struct User {
 }
 
 #[derive(Serialize, Deserialize)]
-struct UserRecord {
-    #[serde(rename = "type")]
-    _type: String,
-    content: String,
+#[serde(untagged)]
+enum UserRecord {
+    Thread {
+        #[serde(rename = "type")]
+        _type: String,
+        content: Thread,
+    },
+    Post {
+        #[serde(rename = "type")]
+        _type: String,
+        content: Post,
+    },
+    Comment {
+        #[serde(rename = "type")]
+        _type: String,
+        content: Comment,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
