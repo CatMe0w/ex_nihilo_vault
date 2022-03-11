@@ -4,6 +4,7 @@ extern crate rocket;
 use rocket::http::Status;
 use rocket::response::content::Html;
 use rocket::serde::{json::Json, Deserialize, Serialize};
+use rocket_sync_db_pools::rusqlite::params;
 use rocket_sync_db_pools::{database, rusqlite};
 use serde_json::json;
 
@@ -48,12 +49,6 @@ enum UserRecord {
         _type: String,
         content: Comment,
     },
-}
-
-enum AdminLogCategory {
-    Post,
-    User,
-    Bawu,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -136,76 +131,153 @@ struct Comment {
     post_id: i64,
 }
 
-#[derive(Serialize, Deserialize)]
-struct ApiRequest {
-    request_type: String,
-    time_machine_datetime: Option<String>,
+async fn get_thread_metadata(vault: Vault, thread_id: i64) -> Option<Thread> {
+    let thread = vault
+        .run(move |c| {
+            c.query_row(
+                "SELECT title, user_id, reply_num, is_good FROM pr_thread WHERE id = ?",
+                params![thread_id],
+                |r| {
+                    Ok(Thread {
+                        thread_id,
+                        title: r.get(0)?,
+                        user_id: r.get(1)?,
+                        reply_num: r.get(2)?,
+                        is_good: r.get(3)?,
+                    })
+                },
+            )
+        })
+        .await
+        .ok()?;
+    Some(thread)
+}
+
+async fn get_user_metadata(vault: Vault, user_type: String, user_clue: String) -> Option<User> {
+    match user_type.as_str() {
+        "user_id" => {
+            let user_type = String::from("id");
+            let user_clue = user_clue.parse::<i64>().unwrap();
+            // dirty hack, since rust doesn't allow the type of user_type either i64 or String
+            // is there any better way to do this?
+            let user = vault
+                .run(move |c| {
+                    c.query_row(
+                        "SELECT id, username, nickname, avatar FROM pr_user WHERE ?1 = ?2",
+                        params![user_type, user_clue],
+                        |r| {
+                            Ok(User {
+                                user_id: r.get(0)?,
+                                username: r.get(1)?,
+                                nickname: r.get(2)?,
+                                avatar: r.get(3)?,
+                            })
+                        },
+                    )
+                })
+                .await
+                .ok()?;
+            Some(user)
+        }
+        _ => {
+            let user = vault
+                .run(move |c| {
+                    c.query_row(
+                        "SELECT id, username, nickname, avatar FROM pr_user WHERE ?1 = ?2",
+                        params![user_type, user_clue],
+                        |r| {
+                            Ok(User {
+                                user_id: r.get(0)?,
+                                username: r.get(1)?,
+                                nickname: r.get(2)?,
+                                avatar: r.get(3)?,
+                            })
+                        },
+                    )
+                })
+                .await
+                .ok()?;
+            Some(user)
+        }
+    }
+}
+
+#[get("/thread/<page>?<time_machine_datetime>")]
+async fn respond_thread(
+    vault: Vault,
     page: i32,
-    thread_id: Option<i64>,
-    post_id: Option<i64>,
-    admin_log_category: Option<String>,
-    admin_log_hide_the_showdown: Option<bool>,
-    user_id: Option<i64>,
-    username: Option<String>,
-    nickname: Option<String>,
-    avatar: Option<String>,
+    time_machine_datetime: Option<String>,
+) -> Result<Json<serde_json::Value>, Status> {
+    match time_machine_datetime {
+        Some(time_machine_datetime) => {
+            // TODO: implement
+            let threads: Vec<Thread> = Vec::new();
+            let users: Vec<User> = Vec::new();
+            let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
+            Ok(Json(
+                json!({"threads": threads, "users": users, "admin_logs": admin_logs}),
+            ))
+        }
+        None => {
+            let threads: Vec<Thread> = Vec::new();
+            let users: Vec<User> = Vec::new();
+            Ok(Json(json!({"threads": threads, "users": users})))
+        }
+    }
 }
 
-async fn get_thread_metadata(thread_id: i64) -> (String, i64, i32, bool) {
-    // TODO: implement
-    let title: String = String::from("");
-    let reply_num: i32 = 0;
-    let is_good: bool = false;
-    let user_id: i64 = 0;
-    (title, user_id, reply_num, is_good)
-}
-
-async fn get_user_metadata(user_type: UserType) -> (i64, String, String, String) {
-    // TODO: implement
-    let user_id: i64 = 0;
-    let username: String = String::from("");
-    let nickname: String = String::from("");
-    let avatar: String = String::from("");
-    (user_id, username, nickname, avatar)
-}
-
-async fn respond_thread(variant: Variant, page: i32) -> Result<Json<serde_json::Value>, Status> {
-    // TODO: implement
-    let threads: Vec<Thread> = Vec::new();
-    let users: Vec<User> = Vec::new();
-    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
-    Ok(Json(
-        json!({"threads": threads, "users": users, "admin_logs": admin_logs}),
-    ))
-}
-
+#[get("/post/<thread_id>/<page>?<time_machine_datetime>")]
 async fn respond_post(
-    variant: Variant,
+    vault: Vault,
     thread_id: i64,
     page: i32,
+    time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    // TODO: implement
-    let (title, user_id, reply_num, is_good) = get_thread_metadata(thread_id).await;
-    let posts: Vec<Post> = Vec::new();
-    let comments: Vec<Comment> = Vec::new();
-    let users: Vec<User> = Vec::new();
-    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
-    Ok(Json(json!({
-        "title": title,
-        "user_id": user_id,
-        "reply_num": reply_num,
-        "is_good": is_good,
-        "comments": comments,
-        "users": users,
-        "posts": posts,
-        "admin_logs": admin_logs
-    })))
+    // // TODO: implement
+    // match variant.as_str() {
+    //     "standard" => {
+    //         // TODO: implement
+    //         let threads: Vec<Thread> = Vec::new();
+    //         let users: Vec<User> = Vec::new();
+    //         let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
+    //         Ok(Json(
+    //             json!({"threads": threads, "users": users, "admin_logs": admin_logs}),
+    //         ))
+    //     }
+    //     "time_machine" => {
+    //         let threads: Vec<Thread> = Vec::new();
+    //         let users: Vec<User> = Vec::new();
+    //         Ok(Json(json!({"threads": threads, "users": users})))
+    //     }
+    //     _ => Err(Status::UnprocessableEntity),
+    // };
+    match get_thread_metadata(vault, thread_id).await {
+        Some(thread) => {
+            let posts: Vec<Post> = Vec::new();
+            let comments: Vec<Comment> = Vec::new();
+            let users: Vec<User> = Vec::new();
+            let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
+            Ok(Json(json!({
+                "title": thread.title,
+                "user_id": thread.user_id,
+                "reply_num":thread.reply_num,
+                "is_good": thread.is_good,
+                "comments": comments,
+                "users": users,
+                "posts": posts,
+                "admin_logs": admin_logs
+            })))
+        }
+        None => Err(Status::NotFound),
+    }
 }
 
+#[get("/comment/<post_id>/<page>?<time_machine_datetime>")]
 async fn respond_comment(
-    variant: Variant,
+    vault: Vault,
     post_id: i64,
     page: i32,
+    time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
     let comments: Vec<Comment> = Vec::new();
@@ -216,43 +288,47 @@ async fn respond_comment(
     ))
 }
 
+#[get("/user/<user_type>/<user_clue>/<page>?<time_machine_datetime>")]
 async fn respond_user(
-    variant: Variant,
-    user_type: UserType,
+    vault: Vault,
+    user_type: String,
+    user_clue: String,
+    page: i32,
+    time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    // TODO: implement
-    let (user_id, username, nickname, avatar) = get_user_metadata(user_type).await;
-    let records: Vec<UserRecord> = Vec::new();
-    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
-    Ok(Json(json!({
-        "user_id": user_id,
-        "username": username,
-        "nickname": nickname,
-        "avatar": avatar,
-        "records": records,
-        "admin_logs": admin_logs
-    })))
+    match get_user_metadata(vault, user_type, user_clue).await {
+        Some(user) => Ok(Json(json!({
+            "user_id": user.user_id,
+            "username": user.username,
+            "nickname": user.nickname,
+            "avatar": user.avatar,
+        }))),
+        None => Err(Status::NotFound),
+    }
 }
 
+#[get("/admin_log/<category>/<page>?<hide_the_showdown>")]
 async fn respond_admin_log(
-    admin_log_category: AdminLogCategory,
-    admin_log_hide_the_showdown: bool,
+    vault: Vault,
+    category: String,
+    hide_the_showdown: bool,
     page: i32,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
-    match admin_log_category {
-        AdminLogCategory::Post => {
+    match category.as_str() {
+        "post" => {
             let admin_logs: Vec<AdminLog> = Vec::new();
             Ok(Json(json!(admin_logs)))
         }
-        AdminLogCategory::User => {
+        "user" => {
             let admin_logs: Vec<AdminLog> = Vec::new();
             Ok(Json(json!(admin_logs)))
         }
-        AdminLogCategory::Bawu => {
+        "bawu" => {
             let admin_logs: Vec<AdminLog> = Vec::new();
             Ok(Json(json!(admin_logs)))
         }
+        _ => Err(Status::UnprocessableEntity),
     }
 }
 
@@ -261,88 +337,17 @@ async fn rickroll() -> Html<&'static str> {
     Html("<!doctype html><meta name='referrer' content='no-referrer'><meta http-equiv='refresh' content='0; URL=https://www.bilibili.com/video/av202867917'>")
 }
 
-#[post("/", format = "json", data = "<api_request>")]
-async fn request_dispatcher(
-    api_request: Json<ApiRequest>,
-) -> Result<Json<serde_json::Value>, Status> {
-    let request_type = api_request.request_type.as_str();
-    let page = api_request.page;
-    match request_type {
-        "thread" => match api_request.time_machine_datetime.clone() {
-            Some(time_machine_datetime) => {
-                respond_thread(Variant::TimeMachine(time_machine_datetime), page).await
-            }
-            None => respond_thread(Variant::Standard, page).await,
-        },
-        "post" => match (
-            api_request.time_machine_datetime.clone(),
-            api_request.thread_id,
-        ) {
-            (Some(time_machine_datetime), Some(thread_id)) => {
-                respond_post(Variant::TimeMachine(time_machine_datetime), thread_id, page).await
-            }
-            (None, Some(thread_id)) => respond_post(Variant::Standard, thread_id, page).await,
-            _ => Err(Status::UnprocessableEntity),
-        },
-        "comment" => match (
-            api_request.time_machine_datetime.clone(),
-            api_request.post_id,
-        ) {
-            (Some(time_machine_datetime), Some(post_id)) => {
-                respond_comment(Variant::TimeMachine(time_machine_datetime), post_id, page).await
-            }
-            (None, Some(post_id)) => respond_comment(Variant::Standard, post_id, page).await,
-            _ => Err(Status::UnprocessableEntity),
-        },
-        "user" => {
-            let variant = match api_request.time_machine_datetime.clone() {
-                Some(time_machine_datetime) => Variant::TimeMachine(time_machine_datetime),
-                None => Variant::Standard,
-            };
-            // priority: user_id -> avatar -> username -> nickname
-            if let Some(user_id) = api_request.user_id {
-                respond_user(variant, UserType::UserId(user_id)).await
-            } else if let Some(avatar) = api_request.avatar.clone() {
-                respond_user(variant, UserType::Avatar(avatar)).await
-            } else if let Some(username) = api_request.username.clone() {
-                respond_user(variant, UserType::Username(username)).await
-            } else if let Some(nickname) = api_request.nickname.clone() {
-                respond_user(variant, UserType::Nickname(nickname)).await
-            } else {
-                Err(Status::UnprocessableEntity)
-            }
-        }
-        "admin_log" => {
-            if let (Some(admin_log_category), Some(admin_log_hide_the_showdown)) = (
-                &api_request.admin_log_category,
-                api_request.admin_log_hide_the_showdown,
-            ) {
-                match admin_log_category.as_str() {
-                    "post" => {
-                        respond_admin_log(AdminLogCategory::Post, admin_log_hide_the_showdown, page)
-                            .await
-                    }
-                    "user" => {
-                        respond_admin_log(AdminLogCategory::User, admin_log_hide_the_showdown, page)
-                            .await
-                    }
-                    "bawu" => {
-                        respond_admin_log(AdminLogCategory::Bawu, admin_log_hide_the_showdown, page)
-                            .await
-                    }
-                    _ => Err(Status::UnprocessableEntity),
-                }
-            } else {
-                Err(Status::UnprocessableEntity)
-            }
-        }
-        _ => Err(Status::UnprocessableEntity),
-    }
-}
-
 #[launch]
 fn rocket() -> _ {
-    rocket::build()
-        .attach(Vault::fairing())
-        .mount("/", routes![rickroll, request_dispatcher])
+    rocket::build().attach(Vault::fairing()).mount(
+        "/",
+        routes![
+            rickroll,
+            respond_thread,
+            respond_post,
+            respond_comment,
+            respond_user,
+            respond_admin_log
+        ],
+    )
 }
