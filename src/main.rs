@@ -12,7 +12,7 @@ struct Vault(rusqlite::Connection);
 
 enum Variant {
     Standard,
-    TimeMachine,
+    TimeMachine(String),
 }
 
 enum UserType {
@@ -139,7 +139,7 @@ struct Comment {
 #[derive(Serialize, Deserialize)]
 struct ApiRequest {
     request_type: String,
-    variant: Option<String>,
+    time_machine_datetime: Option<String>,
     page: i32,
     thread_id: Option<i64>,
     post_id: Option<i64>,
@@ -173,7 +173,10 @@ async fn respond_thread(variant: Variant, page: i32) -> Result<Json<serde_json::
     // TODO: implement
     let threads: Vec<Thread> = Vec::new();
     let users: Vec<User> = Vec::new();
-    Ok(Json(json!({"threads": threads, "users": users})))
+    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
+    Ok(Json(
+        json!({"threads": threads, "users": users, "admin_logs": admin_logs}),
+    ))
 }
 
 async fn respond_post(
@@ -186,13 +189,16 @@ async fn respond_post(
     let posts: Vec<Post> = Vec::new();
     let comments: Vec<Comment> = Vec::new();
     let users: Vec<User> = Vec::new();
+    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
     Ok(Json(json!({
         "title": title,
         "user_id": user_id,
         "reply_num": reply_num,
         "is_good": is_good,
         "comments": comments,
-        "users": users
+        "users": users,
+        "posts": posts,
+        "admin_logs": admin_logs
     })))
 }
 
@@ -204,19 +210,27 @@ async fn respond_comment(
     // TODO: implement
     let comments: Vec<Comment> = Vec::new();
     let users: Vec<User> = Vec::new();
-    Ok(Json(json!({"comments": comments, "users": users})))
+    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
+    Ok(Json(
+        json!({"comments": comments, "users": users, "admin_logs": admin_logs}),
+    ))
 }
 
-async fn respond_user(user_type: UserType) -> Result<Json<serde_json::Value>, Status> {
+async fn respond_user(
+    variant: Variant,
+    user_type: UserType,
+) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
     let (user_id, username, nickname, avatar) = get_user_metadata(user_type).await;
     let records: Vec<UserRecord> = Vec::new();
+    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
     Ok(Json(json!({
         "user_id": user_id,
         "username": username,
         "nickname": nickname,
         "avatar": avatar,
-        "records": records
+        "records": records,
+        "admin_logs": admin_logs
     })))
 }
 
@@ -254,50 +268,46 @@ async fn request_dispatcher(
     let request_type = api_request.request_type.as_str();
     let page = api_request.page;
     match request_type {
-        "thread" => {
-            if let Some(variant) = &api_request.variant {
-                match variant.as_str() {
-                    "standard" => respond_thread(Variant::Standard, page).await,
-                    "time_machine" => respond_thread(Variant::TimeMachine, page).await,
-                    _ => Err(Status::UnprocessableEntity),
-                }
-            } else {
-                Err(Status::UnprocessableEntity)
+        "thread" => match api_request.time_machine_datetime.clone() {
+            Some(time_machine_datetime) => {
+                respond_thread(Variant::TimeMachine(time_machine_datetime), page).await
             }
-        }
-        "post" => {
-            if let (Some(variant), Some(thread_id)) = (&api_request.variant, api_request.thread_id)
-            {
-                match variant.as_str() {
-                    "standard" => respond_post(Variant::Standard, thread_id, page).await,
-                    "time_machine" => respond_post(Variant::TimeMachine, thread_id, page).await,
-                    _ => Err(Status::UnprocessableEntity),
-                }
-            } else {
-                Err(Status::UnprocessableEntity)
+            None => respond_thread(Variant::Standard, page).await,
+        },
+        "post" => match (
+            api_request.time_machine_datetime.clone(),
+            api_request.thread_id,
+        ) {
+            (Some(time_machine_datetime), Some(thread_id)) => {
+                respond_post(Variant::TimeMachine(time_machine_datetime), thread_id, page).await
             }
-        }
-        "comment" => {
-            if let (Some(variant), Some(post_id)) = (&api_request.variant, api_request.post_id) {
-                match variant.as_str() {
-                    "standard" => respond_comment(Variant::Standard, post_id, page).await,
-                    "time_machine" => respond_comment(Variant::TimeMachine, post_id, page).await,
-                    _ => Err(Status::UnprocessableEntity),
-                }
-            } else {
-                Err(Status::UnprocessableEntity)
+            (None, Some(thread_id)) => respond_post(Variant::Standard, thread_id, page).await,
+            _ => Err(Status::UnprocessableEntity),
+        },
+        "comment" => match (
+            api_request.time_machine_datetime.clone(),
+            api_request.post_id,
+        ) {
+            (Some(time_machine_datetime), Some(post_id)) => {
+                respond_comment(Variant::TimeMachine(time_machine_datetime), post_id, page).await
             }
-        }
+            (None, Some(post_id)) => respond_comment(Variant::Standard, post_id, page).await,
+            _ => Err(Status::UnprocessableEntity),
+        },
         "user" => {
+            let variant = match api_request.time_machine_datetime.clone() {
+                Some(time_machine_datetime) => Variant::TimeMachine(time_machine_datetime),
+                None => Variant::Standard,
+            };
             // priority: user_id -> avatar -> username -> nickname
             if let Some(user_id) = api_request.user_id {
-                respond_user(UserType::UserId(user_id)).await
+                respond_user(variant, UserType::UserId(user_id)).await
             } else if let Some(avatar) = api_request.avatar.clone() {
-                respond_user(UserType::Avatar(avatar)).await
+                respond_user(variant, UserType::Avatar(avatar)).await
             } else if let Some(username) = api_request.username.clone() {
-                respond_user(UserType::Username(username)).await
+                respond_user(variant, UserType::Username(username)).await
             } else if let Some(nickname) = api_request.nickname.clone() {
-                respond_user(UserType::Nickname(nickname)).await
+                respond_user(variant, UserType::Nickname(nickname)).await
             } else {
                 Err(Status::UnprocessableEntity)
             }
@@ -328,7 +338,6 @@ async fn request_dispatcher(
         }
         _ => Err(Status::UnprocessableEntity),
     }
-    //Ok(Json(json!({})))
 }
 
 #[launch]
