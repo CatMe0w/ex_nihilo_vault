@@ -11,18 +11,6 @@ use serde_json::json;
 #[database("vault")]
 struct Vault(rusqlite::Connection);
 
-enum Variant {
-    Standard,
-    TimeMachine(String),
-}
-
-enum UserType {
-    UserId(i64),
-    Username(String),
-    Nickname(String),
-    Avatar(String),
-}
-
 #[derive(Serialize, Deserialize)]
 struct User {
     user_id: i64,
@@ -154,52 +142,29 @@ async fn get_thread_metadata(vault: Vault, thread_id: i64) -> Option<Thread> {
 }
 
 async fn get_user_metadata(vault: Vault, user_type: String, user_clue: String) -> Option<User> {
-    match user_type.as_str() {
-        "user_id" => {
-            let user_type = String::from("id");
-            let user_clue = user_clue.parse::<i64>().unwrap();
-            // dirty hack, since rust doesn't allow the type of user_type either i64 or String
-            // is there any better way to do this?
-            let user = vault
-                .run(move |c| {
-                    c.query_row(
-                        "SELECT id, username, nickname, avatar FROM pr_user WHERE ?1 = ?2",
-                        params![user_type, user_clue],
-                        |r| {
-                            Ok(User {
-                                user_id: r.get(0)?,
-                                username: r.get(1)?,
-                                nickname: r.get(2)?,
-                                avatar: r.get(3)?,
-                            })
-                        },
-                    )
+    let sql = match user_type.as_str() {
+        "user_id" => "SELECT id, username, nickname, avatar FROM pr_user WHERE id = ?",
+        "username" => "SELECT id, username, nickname, avatar FROM pr_user WHERE username = ?",
+        "nickname" => "SELECT id, username, nickname, avatar FROM pr_user WHERE nickname = ?",
+        "avatar" => "SELECT id, username, nickname, avatar FROM pr_user WHERE avatar = ?",
+        _ => return None,
+    };
+    // dirty hack, since rust doesn't allow the type of user_type either i64 or String
+    // is there any better way to do this?
+    let user = vault
+        .run(move |c| {
+            c.query_row(sql, params![user_clue], |r| {
+                Ok(User {
+                    user_id: r.get(0)?,
+                    username: r.get(1)?,
+                    nickname: r.get(2)?,
+                    avatar: r.get(3)?,
                 })
-                .await
-                .ok()?;
-            Some(user)
-        }
-        _ => {
-            let user = vault
-                .run(move |c| {
-                    c.query_row(
-                        "SELECT id, username, nickname, avatar FROM pr_user WHERE ?1 = ?2",
-                        params![user_type, user_clue],
-                        |r| {
-                            Ok(User {
-                                user_id: r.get(0)?,
-                                username: r.get(1)?,
-                                nickname: r.get(2)?,
-                                avatar: r.get(3)?,
-                            })
-                        },
-                    )
-                })
-                .await
-                .ok()?;
-            Some(user)
-        }
-    }
+            })
+        })
+        .await
+        .ok()?;
+    Some(user)
 }
 
 #[get("/thread/<page>?<time_machine_datetime>")]
