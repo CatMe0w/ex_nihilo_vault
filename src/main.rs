@@ -103,11 +103,11 @@ struct Post {
     post_id: i64,
     floor: i32,
     user_id: i64,
-    content: Vec<ContentEntry>,
+    content: String,
     time: String,
     comment_num: i32,
-    signature: String,
-    tail: String,
+    signature: Option<String>,
+    tail: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -119,7 +119,7 @@ struct Comment {
     post_id: i64,
 }
 
-async fn get_thread_metadata(vault: Vault, thread_id: i64) -> Option<Thread> {
+async fn get_thread_metadata(vault: &Vault, thread_id: i64) -> Option<Thread> {
     let thread = vault
         .run(move |c| {
             c.query_row(
@@ -141,7 +141,7 @@ async fn get_thread_metadata(vault: Vault, thread_id: i64) -> Option<Thread> {
     Some(thread)
 }
 
-async fn get_user_metadata(vault: Vault, user_type: String, user_clue: String) -> Option<User> {
+async fn get_user_metadata(vault: &Vault, user_type: String, user_clue: String) -> Option<User> {
     let sql = match user_type.as_str() {
         "user_id" => "SELECT id, username, nickname, avatar FROM pr_user WHERE id = ?",
         "username" => "SELECT id, username, nickname, avatar FROM pr_user WHERE username = ?",
@@ -149,8 +149,6 @@ async fn get_user_metadata(vault: Vault, user_type: String, user_clue: String) -
         "avatar" => "SELECT id, username, nickname, avatar FROM pr_user WHERE avatar = ?",
         _ => return None,
     };
-    // dirty hack, since rust doesn't allow the type of user_type either i64 or String
-    // is there any better way to do this?
     let user = vault
         .run(move |c| {
             c.query_row(sql, params![user_clue], |r| {
@@ -165,6 +163,28 @@ async fn get_user_metadata(vault: Vault, user_type: String, user_clue: String) -
         .await
         .ok()?;
     Some(user)
+}
+
+async fn get_post(vault: &Vault, thread_id: i64, page: i32) -> Result<Vec<Post>, rusqlite::Error> {
+    let posts = vault
+        .run(move |c| {
+            c.prepare("SELECT * FROM pr_post WHERE thread_id = ? ORDER BY floor LIMIT ?,30")?
+                .query_map(params![thread_id, (page - 1) * 30], |r| {
+                    Ok(Post {
+                        post_id: r.get(0)?,
+                        floor: r.get(1)?,
+                        user_id: r.get(2)?,
+                        content: r.get(3)?,
+                        time: r.get(4)?,
+                        comment_num: r.get(5)?,
+                        signature: r.get(6)?,
+                        tail: r.get(7)?,
+                    })
+                })?
+                .collect::<Result<Vec<Post>, _>>()
+        })
+        .await?;
+    Ok(posts)
 }
 
 #[get("/thread/<page>?<time_machine_datetime>")]
@@ -216,25 +236,24 @@ async fn respond_post(
     //     }
     //     _ => Err(Status::UnprocessableEntity),
     // };
-    match get_thread_metadata(vault, thread_id).await {
-        Some(thread) => {
-            let posts: Vec<Post> = Vec::new();
-            let comments: Vec<Comment> = Vec::new();
-            let users: Vec<User> = Vec::new();
-            let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
-            Ok(Json(json!({
-                "title": thread.title,
-                "user_id": thread.user_id,
-                "reply_num":thread.reply_num,
-                "is_good": thread.is_good,
-                "comments": comments,
-                "users": users,
-                "posts": posts,
-                "admin_logs": admin_logs
-            })))
-        }
-        None => Err(Status::NotFound),
-    }
+    let thread = match get_thread_metadata(&vault, thread_id).await {
+        Some(thread) => thread,
+        None => return Err(Status::NotFound),
+    };
+    let posts = get_post(&vault, thread_id, page).await.unwrap();
+    let comments: Vec<Comment> = Vec::new();
+    let users: Vec<User> = Vec::new();
+    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
+    Ok(Json(json!({
+        "title": thread.title,
+        "user_id": thread.user_id,
+        "reply_num":thread.reply_num,
+        "is_good": thread.is_good,
+        "comments": comments,
+        "users": users,
+        "posts": posts,
+        "admin_logs": admin_logs
+    })))
 }
 
 #[get("/comment/<post_id>/<page>?<time_machine_datetime>")]
@@ -261,7 +280,7 @@ async fn respond_user(
     page: i32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    match get_user_metadata(vault, user_type, user_clue).await {
+    match get_user_metadata(&vault, user_type, user_clue).await {
         Some(user) => Ok(Json(json!({
             "user_id": user.user_id,
             "username": user.username,
