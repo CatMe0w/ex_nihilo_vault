@@ -71,25 +71,6 @@ enum AdminLog {
 }
 
 #[derive(Serialize, Deserialize)]
-struct ContentEntry {
-    #[serde(rename = "type")]
-    _type: String,
-    #[serde(flatten)]
-    content: Content,
-}
-
-#[derive(Serialize, Deserialize)]
-enum Content {
-    Text(String),
-    Emoticon { id: String, description: String },
-    Username { text: String, user_id: i64 },
-    Url { url: String, text: String },
-    Image(String),
-    Video(String),
-    Audio(String),
-}
-
-#[derive(Serialize, Deserialize)]
 struct Thread {
     thread_id: i64,
     title: String,
@@ -103,7 +84,7 @@ struct Post {
     post_id: i64,
     floor: i32,
     user_id: i64,
-    content: String,
+    content: serde_json::Value,
     time: String,
     comment_num: i32,
     signature: Option<String>,
@@ -114,7 +95,7 @@ struct Post {
 struct Comment {
     comment_id: i64,
     user_id: i64,
-    content: Vec<ContentEntry>,
+    content: serde_json::Value,
     time: String,
     post_id: i64,
 }
@@ -174,7 +155,7 @@ async fn get_post(vault: &Vault, thread_id: i64, page: i32) -> Result<Vec<Post>,
                         post_id: r.get(0)?,
                         floor: r.get(1)?,
                         user_id: r.get(2)?,
-                        content: r.get(3)?,
+                        content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(),
                         time: r.get(4)?,
                         comment_num: r.get(5)?,
                         signature: r.get(6)?,
