@@ -315,7 +315,7 @@ async fn respond_admin_log(
             let admin_logs: Vec<AdminLog> = Vec::new();
             Ok(Json(json!(admin_logs)))
         }
-        _ => Err(Status::UnprocessableEntity),
+        _ => Err(Status::NotFound),
     }
 }
 
