@@ -22,6 +22,34 @@ enum UserType {
     Avatar(String),
 }
 
+#[derive(Serialize, Deserialize)]
+struct User {
+    user_id: i64,
+    username: String,
+    nickname: String,
+    avatar: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum UserRecord {
+    Thread {
+        #[serde(rename = "type")]
+        _type: String,
+        content: Thread,
+    },
+    Post {
+        #[serde(rename = "type")]
+        _type: String,
+        content: Post,
+    },
+    Comment {
+        #[serde(rename = "type")]
+        _type: String,
+        content: Comment,
+    },
+}
+
 enum AdminLogCategory {
     Post,
     User,
@@ -60,35 +88,7 @@ enum AdminLog {
 }
 
 #[derive(Serialize, Deserialize)]
-struct User {
-    user_id: i64,
-    username: String,
-    nickname: String,
-    avatar: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(untagged)]
-enum UserRecord {
-    Thread {
-        #[serde(rename = "type")]
-        _type: String,
-        content: Thread,
-    },
-    Post {
-        #[serde(rename = "type")]
-        _type: String,
-        content: Post,
-    },
-    Comment {
-        #[serde(rename = "type")]
-        _type: String,
-        content: Comment,
-    },
-}
-
-#[derive(Serialize, Deserialize)]
-struct ContentItem {
+struct ContentEntry {
     #[serde(rename = "type")]
     _type: String,
     #[serde(flatten)]
@@ -120,7 +120,7 @@ struct Post {
     post_id: i64,
     floor: i32,
     user_id: i64,
-    content: Vec<ContentItem>,
+    content: Vec<ContentEntry>,
     time: String,
     comment_num: i32,
     signature: String,
@@ -131,7 +131,7 @@ struct Post {
 struct Comment {
     comment_id: i64,
     user_id: i64,
-    content: Vec<ContentItem>,
+    content: Vec<ContentEntry>,
     time: String,
     post_id: i64,
 }
