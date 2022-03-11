@@ -97,7 +97,6 @@ struct Comment {
     user_id: i64,
     content: serde_json::Value,
     time: String,
-    post_id: i64,
 }
 
 async fn get_thread_metadata(vault: &Vault, thread_id: i64) -> Option<Thread> {
@@ -155,7 +154,7 @@ async fn get_post(vault: &Vault, thread_id: i64, page: i32) -> Result<Vec<Post>,
                         post_id: r.get(0)?,
                         floor: r.get(1)?,
                         user_id: r.get(2)?,
-                        content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(),
+                        content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(), // so ugly
                         time: r.get(4)?,
                         comment_num: r.get(5)?,
                         signature: r.get(6)?,
@@ -166,6 +165,29 @@ async fn get_post(vault: &Vault, thread_id: i64, page: i32) -> Result<Vec<Post>,
         })
         .await?;
     Ok(posts)
+}
+
+async fn get_comment(
+    vault: &Vault,
+    post_id: i64,
+    page: i32,
+    limit: i32,
+) -> Result<Vec<Comment>, rusqlite::Error> {
+    let comments = vault
+        .run(move |c| {
+            c.prepare("SELECT * FROM pr_comment WHERE post_id = ? ORDER BY time LIMIT ?,?")?
+                .query_map(params![post_id, (page - 1) * 10, limit], |r| {
+                    Ok(Comment {
+                        comment_id: r.get(0)?,
+                        user_id: r.get(1)?,
+                        content: serde_json::from_str(r.get::<usize, String>(2)?.as_str()).unwrap(),
+                        time: r.get(3)?,
+                    })
+                })?
+                .collect::<Result<Vec<Comment>, _>>()
+        })
+        .await?;
+    Ok(comments)
 }
 
 #[get("/thread/<page>?<time_machine_datetime>")]
@@ -245,7 +267,7 @@ async fn respond_comment(
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
-    let comments: Vec<Comment> = Vec::new();
+    let comments = get_comment(&vault, post_id, page, 10).await.unwrap();
     let users: Vec<User> = Vec::new();
     let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
     Ok(Json(
