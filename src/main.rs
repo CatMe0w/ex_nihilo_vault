@@ -280,13 +280,13 @@ async fn get_user_records(
                      LEFT JOIN pr_post
                      ON pr_comment.post_id = pr_post.id
                      LEFT JOIN pr_thread
-                     ON pr_post.thread_id=pr_thread.id
+                     ON pr_post.thread_id = pr_thread.id
                      WHERE pr_comment.user_id = ?
                      AND pr_comment.time < ?
                      ORDER BY time DESC
                      LIMIT ?,50",
             )?
-            .query_map(params![user_id, user_id, datetime, datetime, (page - 1) * 50], |r| {
+            .query_map(params![user_id, datetime, user_id, datetime, (page - 1) * 50], |r| {
                 match r.get::<usize, Option<i64>>(5)? {
                     None => Ok(UserRecord::Post {
                         _type: "post".to_string(),
