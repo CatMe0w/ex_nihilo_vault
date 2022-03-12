@@ -39,6 +39,12 @@ enum UserRecord {
     },
 }
 
+enum AdminLogCategory {
+    User,
+    Post,
+    Bawu,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum AdminLog {
@@ -47,6 +53,7 @@ enum AdminLog {
         post_id: Option<i64>,
         title: String,
         content_preview: String,
+        media: Option<String>,
         username: String,
         post_time: String,
         operation: String,
@@ -65,7 +72,7 @@ enum AdminLog {
         avatar: String,
         username: String,
         operation: String,
-        operator: String,
+        operator: Option<String>,
         operation_time: String,
     },
 }
@@ -220,6 +227,78 @@ async fn get_comment(
     Ok(comments)
 }
 
+async fn get_admin_log(
+    vault: &Vault,
+    category: AdminLogCategory,
+    page: i32,
+    hide_the_showdown: bool,
+) -> Result<Vec<AdminLog>, rusqlite::Error> {
+    let logs = match category {
+        AdminLogCategory::Post => {
+            let sql = match hide_the_showdown {
+                true => "SELECT * FROM un_post WHERE operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%' LIMIT ?,50",
+                false => "SELECT * FROM un_post DESC LIMIT ?,50",
+            };
+            vault
+                .run(move |c| {
+                    c.prepare(sql)?
+                        .query_map(params![(page - 1) * 50], |r| {
+                            Ok(AdminLog::Post {
+                                thread_id: r.get(0)?,
+                                post_id: r.get(1)?,
+                                title: r.get(2)?,
+                                content_preview: r.get(3)?,
+                                media: r.get(4)?,
+                                username: r.get(5)?,
+                                post_time: r.get(6)?,
+                                operation: r.get(7)?,
+                                operator: r.get(8)?,
+                                operation_time: r.get(9)?,
+                            })
+                        })?
+                        .collect::<Result<Vec<AdminLog>, _>>()
+                })
+                .await?
+        }
+        AdminLogCategory::User => {
+            vault
+                .run(move |c| {
+                    c.prepare("SELECT * FROM un_user DESC LIMIT ?,50")?
+                        .query_map(params![(page - 1) * 50], |r| {
+                            Ok(AdminLog::User {
+                                avatar: r.get(0)?,
+                                username: r.get(1)?,
+                                operation: r.get(2)?,
+                                duration: r.get(3)?,
+                                operator: r.get(4)?,
+                                operation_time: r.get(5)?,
+                            })
+                        })?
+                        .collect::<Result<Vec<AdminLog>, _>>()
+                })
+                .await?
+        }
+        AdminLogCategory::Bawu => {
+            vault
+                .run(move |c| {
+                    c.prepare("SELECT * FROM un_bawu DESC LIMIT ?,50")?
+                        .query_map(params![(page - 1) * 50], |r| {
+                            Ok(AdminLog::Bawu {
+                                avatar: r.get(0)?,
+                                username: r.get(1)?,
+                                operation: r.get(2)?,
+                                operator: r.get(3)?,
+                                operation_time: r.get(4)?,
+                            })
+                        })?
+                        .collect::<Result<Vec<AdminLog>, _>>()
+                })
+                .await?
+        }
+    };
+    Ok(logs)
+}
+
 #[get("/thread/<page>?<time_machine_datetime>")]
 async fn respond_thread(
     vault: Vault,
@@ -315,15 +394,21 @@ async fn respond_admin_log(
     // TODO: implement
     match category.as_str() {
         "post" => {
-            let admin_logs: Vec<AdminLog> = Vec::new();
+            let admin_logs = get_admin_log(&vault, AdminLogCategory::Post, page, hide_the_showdown)
+                .await
+                .unwrap();
             Ok(Json(json!(admin_logs)))
         }
         "user" => {
-            let admin_logs: Vec<AdminLog> = Vec::new();
+            let admin_logs = get_admin_log(&vault, AdminLogCategory::User, page, hide_the_showdown)
+                .await
+                .unwrap();
             Ok(Json(json!(admin_logs)))
         }
         "bawu" => {
-            let admin_logs: Vec<AdminLog> = Vec::new();
+            let admin_logs = get_admin_log(&vault, AdminLogCategory::Bawu, page, hide_the_showdown)
+                .await
+                .unwrap();
             Ok(Json(json!(admin_logs)))
         }
         _ => Err(Status::NotFound),
