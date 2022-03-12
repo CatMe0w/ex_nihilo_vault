@@ -161,9 +161,9 @@ fn get_datetime_sql_param(datetime: Option<String>) -> String {
     }
 }
 
-async fn get_thread(
+async fn get_threads(
     vault: &Vault,
-    page: i32,
+    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Vec<Thread>, rusqlite::Error> {
     let datetime = get_datetime_sql_param(time_machine_datetime);
@@ -195,10 +195,10 @@ async fn get_thread(
     Ok(threads)
 }
 
-async fn get_post(
+async fn get_posts(
     vault: &Vault,
     thread_id: i64,
-    page: i32,
+    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Vec<Post>, rusqlite::Error> {
     let datetime = get_datetime_sql_param(time_machine_datetime);
@@ -225,10 +225,10 @@ async fn get_post(
     Ok(posts)
 }
 
-async fn get_comment(
+async fn get_comments(
     vault: &Vault,
     post_id: i64,
-    page: i32,
+    page: u32,
     limit: i32,
     time_machine_datetime: Option<String>,
 ) -> Result<Vec<Comment>, rusqlite::Error> {
@@ -252,13 +252,13 @@ async fn get_comment(
     Ok(comments)
 }
 
-async fn get_admin_log(
+async fn get_admin_logs(
     vault: &Vault,
     category: AdminLogCategory,
-    page: i32,
+    page: u32,
     hide_the_showdown: bool,
 ) -> Result<Vec<AdminLog>, rusqlite::Error> {
-    let logs = match category {
+    let admin_logs = match category {
         AdminLogCategory::Post => {
             let sql = match hide_the_showdown {
                 true => "SELECT * FROM un_post WHERE operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%' LIMIT ?,50",
@@ -321,16 +321,16 @@ async fn get_admin_log(
                 .await?
         }
     };
-    Ok(logs)
+    Ok(admin_logs)
 }
 
 #[get("/thread/<page>?<time_machine_datetime>")]
 async fn respond_thread(
     vault: Vault,
-    page: i32,
+    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    let threads = get_thread(&vault, page, time_machine_datetime.clone())
+    let threads = get_threads(&vault, page, time_machine_datetime.clone())
         .await
         .unwrap();
 
@@ -344,7 +344,7 @@ async fn respond_thread(
     }
 
     match time_machine_datetime {
-        Some(time_machine_datetime) => Ok(Json(json!({"threads": threads, "users": users}))),
+        Some(_) => Ok(Json(json!({"threads": threads, "users": users}))),
         None => {
             let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
             Ok(Json(json!({"threads": threads, "users": users})))
@@ -356,7 +356,7 @@ async fn respond_thread(
 async fn respond_post(
     vault: Vault,
     thread_id: i64,
-    page: i32,
+    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
     let thread = match get_thread_metadata(&vault, thread_id).await {
@@ -364,7 +364,7 @@ async fn respond_post(
         None => return Err(Status::NotFound),
     };
 
-    let posts = get_post(&vault, thread_id, page, time_machine_datetime.clone())
+    let posts = get_posts(&vault, thread_id, page, time_machine_datetime.clone())
         .await
         .unwrap();
 
@@ -380,7 +380,7 @@ async fn respond_post(
     }
 
     match time_machine_datetime {
-        Some(time_machine_datetime) => Ok(Json(json!({
+        Some(_) => Ok(Json(json!({
             "title": thread.title,
             "user_id": thread.user_id,
             "reply_num":thread.reply_num,
@@ -409,10 +409,10 @@ async fn respond_post(
 async fn respond_comment(
     vault: Vault,
     post_id: i64,
-    page: i32,
+    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    let comments = get_comment(&vault, post_id, page, 10, time_machine_datetime.clone())
+    let comments = get_comments(&vault, post_id, page, 10, time_machine_datetime.clone())
         .await
         .unwrap();
 
@@ -426,7 +426,7 @@ async fn respond_comment(
     }
 
     match time_machine_datetime {
-        Some(time_machine_datetime) => Ok(Json(json!({"comments": comments, "users": users}))),
+        Some(_) => Ok(Json(json!({"comments": comments, "users": users}))),
         None => {
             let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
             Ok(Json(
@@ -441,7 +441,7 @@ async fn respond_user(
     vault: Vault,
     user_type: String,
     user_clue: String,
-    page: i32,
+    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
     match get_user_metadata(&vault, user_type, user_clue).await {
@@ -459,24 +459,24 @@ async fn respond_user(
 async fn respond_admin_log(
     vault: Vault,
     category: String,
-    hide_the_showdown: bool,
-    page: i32,
+    
+    page: u32,hide_the_showdown: bool,
 ) -> Result<Json<serde_json::Value>, Status> {
     match category.as_str() {
         "post" => {
-            let admin_logs = get_admin_log(&vault, AdminLogCategory::Post, page, hide_the_showdown)
+            let admin_logs = get_admin_logs(&vault, AdminLogCategory::Post, page, hide_the_showdown)
                 .await
                 .unwrap();
             Ok(Json(json!(admin_logs)))
         }
         "user" => {
-            let admin_logs = get_admin_log(&vault, AdminLogCategory::User, page, hide_the_showdown)
+            let admin_logs = get_admin_logs(&vault, AdminLogCategory::User, page, hide_the_showdown)
                 .await
                 .unwrap();
             Ok(Json(json!(admin_logs)))
         }
         "bawu" => {
-            let admin_logs = get_admin_log(&vault, AdminLogCategory::Bawu, page, hide_the_showdown)
+            let admin_logs = get_admin_logs(&vault, AdminLogCategory::Bawu, page, hide_the_showdown)
                 .await
                 .unwrap();
             Ok(Json(json!(admin_logs)))
