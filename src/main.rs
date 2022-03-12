@@ -295,7 +295,7 @@ async fn get_user_records(
                         post_id: r.get(2)?,
                         floor: r.get(3)?,
                         post_content: serde_json::from_str(r.get::<usize, String>(4)?.as_str()).unwrap(),
-                        time: r.get(7)?,
+                        time: r.get(5)?,
                     }),
                     Some(_) => Ok(UserRecord::Comment {
                         _type: "comment".to_string(),
