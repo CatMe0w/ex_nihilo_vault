@@ -73,8 +73,9 @@ enum AdminLog {
 #[derive(Serialize, Deserialize)]
 struct Thread {
     thread_id: i64,
-    title: String,
     user_id: i64,
+    title: String,
+    content: serde_json::Value,
     reply_num: i32,
     is_good: bool,
 }
@@ -112,6 +113,7 @@ async fn get_thread_metadata(vault: &Vault, thread_id: i64) -> Option<Thread> {
                         user_id: r.get(1)?,
                         reply_num: r.get(2)?,
                         is_good: r.get(3)?,
+                        content: json!(null),
                     })
                 },
             )
@@ -143,6 +145,34 @@ async fn get_user_metadata(vault: &Vault, user_type: String, user_clue: String) 
         .await
         .ok()?;
     Some(user)
+}
+
+async fn get_thread(vault: &Vault, page: i32) -> Result<Vec<Thread>, rusqlite::Error> {
+    let threads = vault
+        .run(move |c| {
+            c.prepare("SELECT pr_thread.id, pr_thread.user_id, pr_thread.title, pr_post.content, pr_thread.reply_num, pr_thread.is_good
+                           FROM pr_post
+                           LEFT JOIN pr_comment
+                           ON pr_comment.post_id = pr_post.id
+                           LEFT JOIN pr_thread
+                           ON pr_post.thread_id = pr_thread.id
+                           WHERE pr_post.floor = 1
+                           ORDER BY pr_post.time DESC
+                           LIMIT ?,50")?
+                .query_map(params![(page - 1) * 50], |r| {
+                    Ok(Thread {
+                        thread_id: r.get(0)?,
+                        user_id: r.get(1)?,
+                        title: r.get(2)?,
+                        content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(),
+                        reply_num: r.get(4)?,
+                        is_good: r.get(5)?,
+                    })
+                })?
+                .collect::<Result<Vec<Thread>, _>>()
+        })
+        .await?;
+    Ok(threads)
 }
 
 async fn get_post(vault: &Vault, thread_id: i64, page: i32) -> Result<Vec<Post>, rusqlite::Error> {
@@ -198,8 +228,7 @@ async fn respond_thread(
 ) -> Result<Json<serde_json::Value>, Status> {
     match time_machine_datetime {
         Some(time_machine_datetime) => {
-            // TODO: implement
-            let threads: Vec<Thread> = Vec::new();
+            let threads = get_thread(&vault, page).await.unwrap();
             let users: Vec<User> = Vec::new();
             let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
             Ok(Json(
@@ -221,24 +250,6 @@ async fn respond_post(
     page: i32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    // // TODO: implement
-    // match variant.as_str() {
-    //     "standard" => {
-    //         // TODO: implement
-    //         let threads: Vec<Thread> = Vec::new();
-    //         let users: Vec<User> = Vec::new();
-    //         let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
-    //         Ok(Json(
-    //             json!({"threads": threads, "users": users, "admin_logs": admin_logs}),
-    //         ))
-    //     }
-    //     "time_machine" => {
-    //         let threads: Vec<Thread> = Vec::new();
-    //         let users: Vec<User> = Vec::new();
-    //         Ok(Json(json!({"threads": threads, "users": users})))
-    //     }
-    //     _ => Err(Status::UnprocessableEntity),
-    // };
     let thread = match get_thread_metadata(&vault, thread_id).await {
         Some(thread) => thread,
         None => return Err(Status::NotFound),
