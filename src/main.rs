@@ -330,20 +330,23 @@ async fn respond_thread(
     page: i32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    match time_machine_datetime {
-        Some(time_machine_datetime) => {
-            let threads = get_thread(&vault, page, Some(time_machine_datetime))
+    let threads = get_thread(&vault, page, time_machine_datetime.clone())
+        .await
+        .unwrap();
+
+    let mut users: Vec<User> = Vec::new();
+    for thread in &threads {
+        users.push(
+            get_user_metadata(&vault, "user_id".to_string(), thread.user_id.to_string())
                 .await
-                .unwrap();
-            let users: Vec<User> = Vec::new();
-            let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
-            Ok(Json(
-                json!({"threads": threads, "users": users, "admin_logs": admin_logs}),
-            ))
-        }
+                .unwrap(),
+        );
+    }
+
+    match time_machine_datetime {
+        Some(time_machine_datetime) => Ok(Json(json!({"threads": threads, "users": users}))),
         None => {
-            let threads: Vec<Thread> = Vec::new();
-            let users: Vec<User> = Vec::new();
+            let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
             Ok(Json(json!({"threads": threads, "users": users})))
         }
     }
@@ -360,22 +363,46 @@ async fn respond_post(
         Some(thread) => thread,
         None => return Err(Status::NotFound),
     };
-    let posts = get_post(&vault, thread_id, page, time_machine_datetime)
+
+    let posts = get_post(&vault, thread_id, page, time_machine_datetime.clone())
         .await
         .unwrap();
-    let comments: Vec<Comment> = Vec::new();
-    let users: Vec<User> = Vec::new();
-    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
-    Ok(Json(json!({
-        "title": thread.title,
-        "user_id": thread.user_id,
-        "reply_num":thread.reply_num,
-        "is_good": thread.is_good,
-        "comments": comments,
-        "users": users,
-        "posts": posts,
-        "admin_logs": admin_logs
-    })))
+
+    let comments: Vec<Comment> = Vec::new(); // TODO: implement
+
+    let mut users: Vec<User> = Vec::new();
+    for post in &posts {
+        users.push(
+            get_user_metadata(&vault, "user_id".to_string(), post.user_id.to_string())
+                .await
+                .unwrap(),
+        );
+    }
+
+    match time_machine_datetime {
+        Some(time_machine_datetime) => Ok(Json(json!({
+            "title": thread.title,
+            "user_id": thread.user_id,
+            "reply_num":thread.reply_num,
+            "is_good": thread.is_good,
+            "comments": comments,
+            "users": users,
+            "posts": posts,
+        }))),
+        None => {
+            let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
+            Ok(Json(json!({
+                "title": thread.title,
+                "user_id": thread.user_id,
+                "reply_num":thread.reply_num,
+                "is_good": thread.is_good,
+                "comments": comments,
+                "users": users,
+                "posts": posts,
+                "admin_logs": admin_logs
+            })))
+        }
+    }
 }
 
 #[get("/comment/<post_id>/<page>?<time_machine_datetime>")]
@@ -385,15 +412,28 @@ async fn respond_comment(
     page: i32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    // TODO: implement
-    let comments = get_comment(&vault, post_id, page, 10, time_machine_datetime)
+    let comments = get_comment(&vault, post_id, page, 10, time_machine_datetime.clone())
         .await
         .unwrap();
-    let users: Vec<User> = Vec::new();
-    let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
-    Ok(Json(
-        json!({"comments": comments, "users": users, "admin_logs": admin_logs}),
-    ))
+
+    let mut users: Vec<User> = Vec::new();
+    for comment in &comments {
+        users.push(
+            get_user_metadata(&vault, "user_id".to_string(), comment.user_id.to_string())
+                .await
+                .unwrap(),
+        );
+    }
+
+    match time_machine_datetime {
+        Some(time_machine_datetime) => Ok(Json(json!({"comments": comments, "users": users}))),
+        None => {
+            let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
+            Ok(Json(
+                json!({"comments": comments, "users": users, "admin_logs": admin_logs}),
+            ))
+        }
+    }
 }
 
 #[get("/user/<user_type>/<user_clue>/<page>?<time_machine_datetime>")]
@@ -422,7 +462,6 @@ async fn respond_admin_log(
     hide_the_showdown: bool,
     page: i32,
 ) -> Result<Json<serde_json::Value>, Status> {
-    // TODO: implement
     match category.as_str() {
         "post" => {
             let admin_logs = get_admin_log(&vault, AdminLogCategory::Post, page, hide_the_showdown)
