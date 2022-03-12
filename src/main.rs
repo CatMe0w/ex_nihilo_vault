@@ -138,10 +138,10 @@ async fn get_thread_metadata(vault: &Vault, thread_id: i64) -> Option<Thread> {
 
 async fn get_user_metadata(vault: &Vault, user_type: String, user_clue: String) -> Option<User> {
     let sql = match user_type.as_str() {
-        "user_id" => "SELECT id, username, nickname, avatar FROM pr_user WHERE id = ?",
-        "username" => "SELECT id, username, nickname, avatar FROM pr_user WHERE username = ?",
-        "nickname" => "SELECT id, username, nickname, avatar FROM pr_user WHERE nickname = ?",
-        "avatar" => "SELECT id, username, nickname, avatar FROM pr_user WHERE avatar = ?",
+        "user_id" => "SELECT * FROM pr_user WHERE id = ?",
+        "username" => "SELECT * FROM pr_user WHERE username = ?",
+        "nickname" => "SELECT * FROM pr_user WHERE nickname = ?",
+        "avatar" => "SELECT * FROM pr_user WHERE avatar = ?",
         _ => return None,
     };
     let user = vault
