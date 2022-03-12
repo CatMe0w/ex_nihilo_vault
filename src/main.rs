@@ -154,7 +154,19 @@ async fn get_user_metadata(vault: &Vault, user_type: String, user_clue: String) 
     Some(user)
 }
 
-async fn get_thread(vault: &Vault, page: i32) -> Result<Vec<Thread>, rusqlite::Error> {
+fn get_datetime_sql_param(datetime: Option<String>) -> String {
+    match datetime {
+        Some(datetime) => datetime,
+        None => "9999-12-31 23:59:59".to_string(), // so ugly
+    }
+}
+
+async fn get_thread(
+    vault: &Vault,
+    page: i32,
+    time_machine_datetime: Option<String>,
+) -> Result<Vec<Thread>, rusqlite::Error> {
+    let datetime = get_datetime_sql_param(time_machine_datetime);
     let threads = vault
         .run(move |c| {
             c.prepare("SELECT pr_thread.id, pr_thread.user_id, pr_thread.title, pr_post.content, pr_thread.reply_num, pr_thread.is_good
@@ -164,9 +176,10 @@ async fn get_thread(vault: &Vault, page: i32) -> Result<Vec<Thread>, rusqlite::E
                            LEFT JOIN pr_thread
                            ON pr_post.thread_id = pr_thread.id
                            WHERE pr_post.floor = 1
+                           AND time < ?
                            ORDER BY pr_post.time DESC
                            LIMIT ?,50")?
-                .query_map(params![(page - 1) * 50], |r| {
+                .query_map(params![datetime, (page - 1) * 50], |r| {
                     Ok(Thread {
                         thread_id: r.get(0)?,
                         user_id: r.get(1)?,
@@ -182,23 +195,31 @@ async fn get_thread(vault: &Vault, page: i32) -> Result<Vec<Thread>, rusqlite::E
     Ok(threads)
 }
 
-async fn get_post(vault: &Vault, thread_id: i64, page: i32) -> Result<Vec<Post>, rusqlite::Error> {
+async fn get_post(
+    vault: &Vault,
+    thread_id: i64,
+    page: i32,
+    time_machine_datetime: Option<String>,
+) -> Result<Vec<Post>, rusqlite::Error> {
+    let datetime = get_datetime_sql_param(time_machine_datetime);
     let posts = vault
         .run(move |c| {
-            c.prepare("SELECT * FROM pr_post WHERE thread_id = ? ORDER BY floor LIMIT ?,30")?
-                .query_map(params![thread_id, (page - 1) * 30], |r| {
-                    Ok(Post {
-                        post_id: r.get(0)?,
-                        floor: r.get(1)?,
-                        user_id: r.get(2)?,
-                        content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(), // so ugly
-                        time: r.get(4)?,
-                        comment_num: r.get(5)?,
-                        signature: r.get(6)?,
-                        tail: r.get(7)?,
-                    })
-                })?
-                .collect::<Result<Vec<Post>, _>>()
+            c.prepare(
+                "SELECT * FROM pr_post WHERE thread_id = ? AND time < ? ORDER BY floor LIMIT ?,30",
+            )?
+            .query_map(params![thread_id, datetime, (page - 1) * 30], |r| {
+                Ok(Post {
+                    post_id: r.get(0)?,
+                    floor: r.get(1)?,
+                    user_id: r.get(2)?,
+                    content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(), // so ugly
+                    time: r.get(4)?,
+                    comment_num: r.get(5)?,
+                    signature: r.get(6)?,
+                    tail: r.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<Post>, _>>()
         })
         .await?;
     Ok(posts)
@@ -209,19 +230,23 @@ async fn get_comment(
     post_id: i64,
     page: i32,
     limit: i32,
+    time_machine_datetime: Option<String>,
 ) -> Result<Vec<Comment>, rusqlite::Error> {
+    let datetime = get_datetime_sql_param(time_machine_datetime);
     let comments = vault
         .run(move |c| {
-            c.prepare("SELECT * FROM pr_comment WHERE post_id = ? ORDER BY time LIMIT ?,?")?
-                .query_map(params![post_id, (page - 1) * 10, limit], |r| {
-                    Ok(Comment {
-                        comment_id: r.get(0)?,
-                        user_id: r.get(1)?,
-                        content: serde_json::from_str(r.get::<usize, String>(2)?.as_str()).unwrap(),
-                        time: r.get(3)?,
-                    })
-                })?
-                .collect::<Result<Vec<Comment>, _>>()
+            c.prepare(
+                "SELECT * FROM pr_comment WHERE post_id = ? AND time < ? ORDER BY time LIMIT ?,?",
+            )?
+            .query_map(params![post_id, datetime, (page - 1) * 10, limit], |r| {
+                Ok(Comment {
+                    comment_id: r.get(0)?,
+                    user_id: r.get(1)?,
+                    content: serde_json::from_str(r.get::<usize, String>(2)?.as_str()).unwrap(),
+                    time: r.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<Comment>, _>>()
         })
         .await?;
     Ok(comments)
@@ -307,7 +332,9 @@ async fn respond_thread(
 ) -> Result<Json<serde_json::Value>, Status> {
     match time_machine_datetime {
         Some(time_machine_datetime) => {
-            let threads = get_thread(&vault, page).await.unwrap();
+            let threads = get_thread(&vault, page, Some(time_machine_datetime))
+                .await
+                .unwrap();
             let users: Vec<User> = Vec::new();
             let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
             Ok(Json(
@@ -333,7 +360,9 @@ async fn respond_post(
         Some(thread) => thread,
         None => return Err(Status::NotFound),
     };
-    let posts = get_post(&vault, thread_id, page).await.unwrap();
+    let posts = get_post(&vault, thread_id, page, time_machine_datetime)
+        .await
+        .unwrap();
     let comments: Vec<Comment> = Vec::new();
     let users: Vec<User> = Vec::new();
     let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
@@ -357,7 +386,9 @@ async fn respond_comment(
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
     // TODO: implement
-    let comments = get_comment(&vault, post_id, page, 10).await.unwrap();
+    let comments = get_comment(&vault, post_id, page, 10, time_machine_datetime)
+        .await
+        .unwrap();
     let users: Vec<User> = Vec::new();
     let admin_logs: Vec<AdminLog> = Vec::new(); // for standard variant
     Ok(Json(
