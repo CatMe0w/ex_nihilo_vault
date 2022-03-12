@@ -1,4 +1,3 @@
-#![allow(unused_variables)]
 #[macro_use]
 extern crate rocket;
 use rocket::http::Status;
@@ -22,20 +21,27 @@ struct User {
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum UserRecord {
-    Thread {
-        #[serde(rename = "type")]
-        _type: String,
-        content: Thread,
-    },
     Post {
         #[serde(rename = "type")]
         _type: String,
-        content: Post,
+        thread_id: i64,
+        title: String,
+        post_id: i64,
+        floor: i32,
+        post_content: serde_json::Value,
+        time: String,
     },
     Comment {
         #[serde(rename = "type")]
         _type: String,
-        content: Comment,
+        thread_id: i64,
+        title: String,
+        post_id: i64,
+        floor: i32,
+        post_content: serde_json::Value,
+        comment_id: i64,
+        comment_content: serde_json::Value,
+        time: String,
     },
 }
 
@@ -252,6 +258,64 @@ async fn get_comments(
     Ok(comments)
 }
 
+async fn get_user_records(
+    vault: &Vault,
+    user_id: i64,
+    page: u32,
+    time_machine_datetime: Option<String>,
+) -> Result<Vec<UserRecord>, rusqlite::Error> {
+    let datetime = get_datetime_sql_param(time_machine_datetime);
+    let user_records = vault
+        .run(move |c| {
+            c.prepare(
+                "SELECT thread_id, pr_thread.title AS title, pr_post.id AS post_id, floor, content AS post_content, NULL AS comment_id, NULL AS comment_content, time
+                     FROM pr_post
+                     LEFT JOIN pr_thread
+                     ON pr_post.thread_id = pr_thread.id
+                     WHERE pr_post.user_id = ?
+                     AND pr_post.time < ?
+                     UNION
+                     SELECT pr_thread.id, pr_thread.title, post_id, pr_post.floor, pr_post.content, pr_comment.id, pr_comment.content, pr_comment.time
+                     FROM pr_comment
+                     LEFT JOIN pr_post
+                     ON pr_comment.post_id = pr_post.id
+                     LEFT JOIN pr_thread
+                     ON pr_post.thread_id=pr_thread.id
+                     WHERE pr_comment.user_id = ?
+                     AND pr_comment.time < ?
+                     ORDER BY time DESC
+                     LIMIT ?,50",
+            )?
+            .query_map(params![user_id, user_id, datetime, datetime, (page - 1) * 50], |r| {
+                match r.get::<usize, Option<i64>>(5)? {
+                    None => Ok(UserRecord::Post {
+                        _type: "post".to_string(),
+                        thread_id: r.get(0)?,
+                        title: r.get(1)?,
+                        post_id: r.get(2)?,
+                        floor: r.get(3)?,
+                        post_content: serde_json::from_str(r.get::<usize, String>(4)?.as_str()).unwrap(),
+                        time: r.get(7)?,
+                    }),
+                    Some(_) => Ok(UserRecord::Comment {
+                        _type: "comment".to_string(),
+                        thread_id: r.get(0)?,
+                        title: r.get(1)?,
+                        post_id: r.get(2)?,
+                        floor: r.get(3)?,
+                        post_content: serde_json::from_str(r.get::<usize, String>(4)?.as_str()).unwrap(),
+                        comment_id: r.get(5)?,
+                        comment_content: serde_json::from_str(r.get::<usize, String>(6)?.as_str()).unwrap(),
+                        time: r.get(7)?,
+                    }),
+                }
+            })?
+            .collect::<Result<Vec<UserRecord>, _>>()
+        })
+        .await?;
+    Ok(user_records)
+}
+
 async fn get_admin_logs(
     vault: &Vault,
     category: AdminLogCategory,
@@ -347,7 +411,9 @@ async fn respond_thread(
         Some(_) => Ok(Json(json!({"threads": threads, "users": users}))),
         None => {
             let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
-            Ok(Json(json!({"threads": threads, "users": users})))
+            Ok(Json(
+                json!({"threads": threads, "users": users, "admin_logs": admin_logs}),
+            ))
         }
     }
 }
@@ -445,12 +511,18 @@ async fn respond_user(
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
     match get_user_metadata(&vault, user_type, user_clue).await {
-        Some(user) => Ok(Json(json!({
-            "user_id": user.user_id,
-            "username": user.username,
-            "nickname": user.nickname,
-            "avatar": user.avatar,
-        }))),
+        Some(user) => {
+            let records = get_user_records(&vault, user.user_id, page, time_machine_datetime)
+                .await
+                .unwrap();
+            Ok(Json(json!({
+                "user_id": user.user_id,
+                "username": user.username,
+                "nickname": user.nickname,
+                "avatar": user.avatar,
+                "records": records,
+            })))
+        }
         None => Err(Status::NotFound),
     }
 }
@@ -459,26 +531,29 @@ async fn respond_user(
 async fn respond_admin_log(
     vault: Vault,
     category: String,
-    
-    page: u32,hide_the_showdown: bool,
+    page: u32,
+    hide_the_showdown: bool,
 ) -> Result<Json<serde_json::Value>, Status> {
     match category.as_str() {
         "post" => {
-            let admin_logs = get_admin_logs(&vault, AdminLogCategory::Post, page, hide_the_showdown)
-                .await
-                .unwrap();
+            let admin_logs =
+                get_admin_logs(&vault, AdminLogCategory::Post, page, hide_the_showdown)
+                    .await
+                    .unwrap();
             Ok(Json(json!(admin_logs)))
         }
         "user" => {
-            let admin_logs = get_admin_logs(&vault, AdminLogCategory::User, page, hide_the_showdown)
-                .await
-                .unwrap();
+            let admin_logs =
+                get_admin_logs(&vault, AdminLogCategory::User, page, hide_the_showdown)
+                    .await
+                    .unwrap();
             Ok(Json(json!(admin_logs)))
         }
         "bawu" => {
-            let admin_logs = get_admin_logs(&vault, AdminLogCategory::Bawu, page, hide_the_showdown)
-                .await
-                .unwrap();
+            let admin_logs =
+                get_admin_logs(&vault, AdminLogCategory::Bawu, page, hide_the_showdown)
+                    .await
+                    .unwrap();
             Ok(Json(json!(admin_logs)))
         }
         _ => Err(Status::NotFound),
