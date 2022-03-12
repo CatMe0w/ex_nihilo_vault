@@ -237,7 +237,7 @@ async fn get_admin_log(
         AdminLogCategory::Post => {
             let sql = match hide_the_showdown {
                 true => "SELECT * FROM un_post WHERE operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%' LIMIT ?,50",
-                false => "SELECT * FROM un_post DESC LIMIT ?,50",
+                false => "SELECT * FROM un_post LIMIT ?,50",
             };
             vault
                 .run(move |c| {
@@ -263,7 +263,7 @@ async fn get_admin_log(
         AdminLogCategory::User => {
             vault
                 .run(move |c| {
-                    c.prepare("SELECT * FROM un_user DESC LIMIT ?,50")?
+                    c.prepare("SELECT * FROM un_user LIMIT ?,50")?
                         .query_map(params![(page - 1) * 50], |r| {
                             Ok(AdminLog::User {
                                 avatar: r.get(0)?,
@@ -281,7 +281,7 @@ async fn get_admin_log(
         AdminLogCategory::Bawu => {
             vault
                 .run(move |c| {
-                    c.prepare("SELECT * FROM un_bawu DESC LIMIT ?,50")?
+                    c.prepare("SELECT * FROM un_bawu LIMIT ?,50")?
                         .query_map(params![(page - 1) * 50], |r| {
                             Ok(AdminLog::Bawu {
                                 avatar: r.get(0)?,
