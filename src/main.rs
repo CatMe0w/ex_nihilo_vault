@@ -83,14 +83,23 @@ enum AdminLog {
     },
 }
 
+struct ThreadMetadata {
+    title: String,
+    user_id: i64,
+    reply_num: i32,
+    is_good: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Thread {
     thread_id: i64,
-    user_id: i64,
+    op_user_id: i64, // op: original poster, aka. floor == 1
     title: String,
-    content: serde_json::Value,
+    user_id: i64,
+    time: String,
     reply_num: i32,
     is_good: bool,
+    op_post_content: serde_json::Value,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -113,27 +122,25 @@ struct Comment {
     time: String,
 }
 
-async fn get_thread_metadata(vault: &Vault, thread_id: i64) -> Option<Thread> {
-    let thread = vault
+async fn get_thread_metadata(vault: &Vault, thread_id: i64) -> Option<ThreadMetadata> {
+    let thread_metadata = vault
         .run(move |c| {
             c.query_row(
                 "SELECT title, user_id, reply_num, is_good FROM pr_thread WHERE id = ?",
                 params![thread_id],
                 |r| {
-                    Ok(Thread {
-                        thread_id,
+                    Ok(ThreadMetadata {
                         title: r.get(0)?,
                         user_id: r.get(1)?,
                         reply_num: r.get(2)?,
                         is_good: r.get(3)?,
-                        content: json!(null),
                     })
                 },
             )
         })
         .await
         .ok()?;
-    Some(thread)
+    Some(thread_metadata)
 }
 
 async fn get_user_metadata(vault: &Vault, user_type: String, user_clue: String) -> Option<User> {
@@ -175,24 +182,45 @@ async fn get_threads(
     let datetime = get_datetime_sql_param(time_machine_datetime);
     let threads = vault
         .run(move |c| {
-            c.prepare("SELECT pr_thread.id, pr_thread.user_id, pr_thread.title, pr_post.content, pr_thread.reply_num, pr_thread.is_good
-                           FROM pr_post
-                           LEFT JOIN pr_comment
-                           ON pr_comment.post_id = pr_post.id
-                           LEFT JOIN pr_thread
-                           ON pr_post.thread_id = pr_thread.id
-                           WHERE pr_post.floor = 1
-                           AND time < ?
-                           ORDER BY pr_post.time DESC
-                           LIMIT ?,50")?
-                .query_map(params![datetime, (page - 1) * 50], |r| {
+            c.prepare(
+        "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content FROM (
+                SELECT * FROM (
+                    SELECT * FROM (
+                      SELECT thread_id, user_id, time
+                        FROM pr_post
+                        WHERE time < ?
+                        ORDER BY time DESC
+                    )
+                    GROUP BY thread_id
+                    UNION
+                    SELECT * FROM (
+                        SELECT thread_id, pr_comment.user_id, pr_comment.time
+                        FROM pr_comment, pr_post
+                        ON pr_comment.post_id = pr_post.id
+                        WHERE pr_comment.time < ?
+                        ORDER BY pr_comment.time DESC
+                    )
+                    GROUP BY thread_id
+                    ORDER BY time DESC
+                )
+                GROUP BY thread_id
+                ORDER BY time DESC
+            ) AS x
+            LEFT JOIN pr_thread AS t ON x.thread_id = t.id
+            LEFT JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
+            ORDER BY x.time DESC
+            LIMIT ?,50"
+            )? // feel the pain: this monster takes ~200 ms to execute, help needed
+                .query_map(params![datetime, datetime, (page - 1) * 50], |r| {
                     Ok(Thread {
                         thread_id: r.get(0)?,
-                        user_id: r.get(1)?,
+                        op_user_id: r.get(1)?,
                         title: r.get(2)?,
-                        content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(),
-                        reply_num: r.get(4)?,
-                        is_good: r.get(5)?,
+                        user_id: r.get(3)?,
+                        time: r.get(4)?,
+                        reply_num: r.get(5)?,
+                        is_good: r.get(6)?,
+                        op_post_content: serde_json::from_str(r.get::<usize, String>(7)?.as_str()).unwrap(),
                     })
                 })?
                 .collect::<Result<Vec<Thread>, _>>()
@@ -285,7 +313,7 @@ async fn get_user_records(
                      AND pr_comment.time < ?
                      ORDER BY time DESC
                      LIMIT ?,50",
-            )?
+            )? // won't use sql next time
             .query_map(params![user_id, datetime, user_id, datetime, (page - 1) * 50], |r| {
                 match r.get::<usize, Option<i64>>(5)? {
                     None => Ok(UserRecord::Post {
@@ -398,9 +426,18 @@ async fn respond_thread(
         .await
         .unwrap();
 
-    let mut users: Vec<User> = Vec::new();
+    let mut op_users: Vec<User> = Vec::new();
     for thread in &threads {
-        users.push(
+        op_users.push(
+            get_user_metadata(&vault, "user_id".to_string(), thread.op_user_id.to_string())
+                .await
+                .unwrap(),
+        );
+    }
+
+    let mut last_reply_users: Vec<User> = Vec::new();
+    for thread in &threads {
+        last_reply_users.push(
             get_user_metadata(&vault, "user_id".to_string(), thread.user_id.to_string())
                 .await
                 .unwrap(),
@@ -408,11 +445,13 @@ async fn respond_thread(
     }
 
     match time_machine_datetime {
-        Some(_) => Ok(Json(json!({"threads": threads, "users": users}))),
+        Some(_) => Ok(Json(
+            json!({"threads": threads, "op_users": op_users, "last_reply_users": last_reply_users}),
+        )),
         None => {
             let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
             Ok(Json(
-                json!({"threads": threads, "users": users, "admin_logs": admin_logs}),
+                json!({"threads": threads, "op_users": op_users, "last_reply_users": last_reply_users, "admin_logs": admin_logs}),
             ))
         }
     }
