@@ -471,7 +471,14 @@ async fn respond_post(
         .await
         .unwrap();
 
-    let comments: Vec<Comment> = Vec::new(); // TODO: implement
+    let mut comments: Vec<Vec<Comment>> = Vec::new();
+    for post in &posts {
+        comments.push(
+            get_comments(&vault, post.post_id, 1, 5, time_machine_datetime.clone())
+                .await
+                .unwrap(),
+        );
+    }
 
     let mut users: Vec<User> = Vec::new();
     for post in &posts {
