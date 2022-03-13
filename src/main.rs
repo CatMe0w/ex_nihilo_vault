@@ -450,17 +450,9 @@ async fn respond_thread(
         );
     }
 
-    match time_machine_datetime {
-        Some(_) => Ok(Json(
-            json!({"threads": threads, "op_users": op_users, "last_reply_users": last_reply_users}),
-        )),
-        None => {
-            let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
-            Ok(Json(
-                json!({"threads": threads, "op_users": op_users, "last_reply_users": last_reply_users, "admin_logs": admin_logs}),
-            ))
-        }
-    }
+    Ok(Json(
+        json!({"threads": threads, "op_users": op_users, "last_reply_users": last_reply_users}),
+    ))
 }
 
 #[get("/post/<thread_id>/<page>?<time_machine_datetime>")]
