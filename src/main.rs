@@ -10,10 +10,17 @@ use serde_json::json;
 #[database("vault")]
 struct Vault(rusqlite::Connection);
 
+enum UserType {
+    UserId,
+    Username,
+    Nickname,
+    Avatar,
+}
+
 #[derive(Serialize, Deserialize)]
 struct User {
     user_id: i64,
-    username: String,
+    username: Option<String>,
     nickname: String,
     avatar: String,
 }
@@ -143,13 +150,12 @@ async fn get_thread_metadata(vault: &Vault, thread_id: i64) -> Option<ThreadMeta
     Some(thread_metadata)
 }
 
-async fn get_user_metadata(vault: &Vault, user_type: String, user_clue: String) -> Option<User> {
-    let sql = match user_type.as_str() {
-        "user_id" => "SELECT * FROM pr_user WHERE id = ?",
-        "username" => "SELECT * FROM pr_user WHERE username = ?",
-        "nickname" => "SELECT * FROM pr_user WHERE nickname = ?",
-        "avatar" => "SELECT * FROM pr_user WHERE avatar = ?",
-        _ => return None,
+async fn get_user_metadata(vault: &Vault, user_type: UserType, user_clue: String) -> Option<User> {
+    let sql = match user_type {
+        UserType::UserId => "SELECT * FROM pr_user WHERE id = ?",
+        UserType::Username => "SELECT * FROM pr_user WHERE username = ?",
+        UserType::Nickname => "SELECT * FROM pr_user WHERE nickname = ?",
+        UserType::Avatar => "SELECT * FROM pr_user WHERE avatar = ?",
     };
     let user = vault
         .run(move |c| {
@@ -429,7 +435,7 @@ async fn respond_thread(
     let mut op_users: Vec<User> = Vec::new();
     for thread in &threads {
         op_users.push(
-            get_user_metadata(&vault, "user_id".to_string(), thread.op_user_id.to_string())
+            get_user_metadata(&vault, UserType::UserId, thread.op_user_id.to_string())
                 .await
                 .unwrap(),
         );
@@ -438,7 +444,7 @@ async fn respond_thread(
     let mut last_reply_users: Vec<User> = Vec::new();
     for thread in &threads {
         last_reply_users.push(
-            get_user_metadata(&vault, "user_id".to_string(), thread.user_id.to_string())
+            get_user_metadata(&vault, UserType::UserId, thread.user_id.to_string())
                 .await
                 .unwrap(),
         );
@@ -478,7 +484,7 @@ async fn respond_post(
     let mut users: Vec<User> = Vec::new();
     for post in &posts {
         users.push(
-            get_user_metadata(&vault, "user_id".to_string(), post.user_id.to_string())
+            get_user_metadata(&vault, UserType::UserId, post.user_id.to_string())
                 .await
                 .unwrap(),
         );
@@ -524,7 +530,7 @@ async fn respond_comment(
     let mut users: Vec<User> = Vec::new();
     for comment in &comments {
         users.push(
-            get_user_metadata(&vault, "user_id".to_string(), comment.user_id.to_string())
+            get_user_metadata(&vault, UserType::UserId, comment.user_id.to_string())
                 .await
                 .unwrap(),
         );
@@ -549,6 +555,13 @@ async fn respond_user(
     page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
+    let user_type = match user_type.as_str() {
+        "user_id" => UserType::UserId,
+        "username" => UserType::Username,
+        "nickname" => UserType::Nickname,
+        "avatar" => UserType::Avatar,
+        _ => return Err(Status::NotFound),
+    };
     match get_user_metadata(&vault, user_type, user_clue).await {
         Some(user) => {
             let records = get_user_records(&vault, user.user_id, page, time_machine_datetime)
