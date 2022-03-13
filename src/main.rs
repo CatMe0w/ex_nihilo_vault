@@ -269,16 +269,15 @@ async fn get_comments(
     vault: &Vault,
     post_id: i64,
     page: u32,
-    limit: i32,
     time_machine_datetime: Option<String>,
 ) -> Result<Vec<Comment>, rusqlite::Error> {
     let datetime = get_datetime_sql_param(time_machine_datetime);
     let comments = vault
         .run(move |c| {
             c.prepare(
-                "SELECT * FROM pr_comment WHERE post_id = ? AND time < ? ORDER BY time LIMIT ?,?",
+                "SELECT * FROM pr_comment WHERE post_id = ? AND time < ? ORDER BY time LIMIT ?,10",
             )?
-            .query_map(params![post_id, datetime, (page - 1) * 10, limit], |r| {
+            .query_map(params![post_id, datetime, (page - 1) * 10], |r| {
                 Ok(Comment {
                     comment_id: r.get(0)?,
                     user_id: r.get(1)?,
@@ -474,7 +473,7 @@ async fn respond_post(
     let mut comments: Vec<Vec<Comment>> = Vec::new();
     for post in &posts {
         comments.push(
-            get_comments(&vault, post.post_id, 1, 5, time_machine_datetime.clone())
+            get_comments(&vault, post.post_id, 1, time_machine_datetime.clone())
                 .await
                 .unwrap(),
         );
@@ -522,7 +521,7 @@ async fn respond_comment(
     page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    let comments = get_comments(&vault, post_id, page, 10, time_machine_datetime.clone())
+    let comments = get_comments(&vault, post_id, page, time_machine_datetime.clone())
         .await
         .unwrap();
 
