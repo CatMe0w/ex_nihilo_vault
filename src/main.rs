@@ -192,7 +192,7 @@ async fn get_threads(
             "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content FROM (
                 SELECT * FROM (
                     SELECT * FROM (
-                      SELECT thread_id, user_id, time
+                        SELECT thread_id, user_id, time
                         FROM pr_post
                         WHERE time < ?
                         ORDER BY time DESC
@@ -216,7 +216,7 @@ async fn get_threads(
             JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
             ORDER BY x.time DESC
             LIMIT ?,50"
-            )? // feel the pain: this monster takes ~200 ms to execute, help needed
+            )? // feel the pain: this monster takes ~80 ms to execute and eats a lot of cpu, use proxy_cache to mitigate
                 .query_map(params![datetime, datetime, (page - 1) * 50], |r| {
                     Ok(Thread {
                         thread_id: r.get(0)?,
