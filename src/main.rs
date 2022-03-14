@@ -189,7 +189,7 @@ async fn get_threads(
     let threads = vault
         .run(move |c| {
             c.prepare(
-        "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content FROM (
+            "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content FROM (
                 SELECT * FROM (
                     SELECT * FROM (
                       SELECT thread_id, user_id, time
@@ -201,8 +201,8 @@ async fn get_threads(
                     UNION
                     SELECT * FROM (
                         SELECT thread_id, pr_comment.user_id, pr_comment.time
-                        FROM pr_comment, pr_post
-                        ON pr_comment.post_id = pr_post.id
+                        FROM pr_comment
+                        JOIN pr_post ON pr_comment.post_id = pr_post.id
                         WHERE pr_comment.time < ?
                         ORDER BY pr_comment.time DESC
                     )
@@ -212,8 +212,8 @@ async fn get_threads(
                 GROUP BY thread_id
                 ORDER BY time DESC
             ) AS x
-            LEFT JOIN pr_thread AS t ON x.thread_id = t.id
-            LEFT JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
+            JOIN pr_thread AS t ON x.thread_id = t.id
+            JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
             ORDER BY x.time DESC
             LIMIT ?,50"
             )? // feel the pain: this monster takes ~200 ms to execute, help needed
