@@ -211,11 +211,11 @@ async fn get_threads(
                 )
                 GROUP BY thread_id
                 ORDER BY time DESC
+                LIMIT ?,50
             ) AS x
             JOIN pr_thread AS t ON x.thread_id = t.id
             JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
-            ORDER BY x.time DESC
-            LIMIT ?,50"
+            ORDER BY x.time DESC"
             )? // feel the pain: this monster takes ~80 ms to execute and eats a lot of cpu, use proxy_cache to mitigate
                 .query_map(params![datetime, datetime, (page - 1) * 50], |r| {
                     Ok(Thread {
