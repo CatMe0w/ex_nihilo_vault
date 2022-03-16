@@ -291,6 +291,44 @@ async fn get_comments(
     Ok(comments)
 }
 
+async fn get_post_related_admin_logs(
+    vault: &Vault,
+    thread_id: Option<i64>,
+    post_id: Option<i64>,
+    time_machine_datetime: Option<String>,
+) -> Result<Vec<AdminLog>, rusqlite::Error> {
+    let datetime = get_datetime_sql_param(time_machine_datetime);
+    let sql = match thread_id {
+        Some(_) => "SELECT * FROM un_post WHERE thread_id = ? AND operation_time < ? AND operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%'",
+        None => "SELECT * FROM un_post WHERE post_id = ? AND operation_time < ? AND operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%'",
+    };
+    let id_param = match thread_id {
+        Some(_) => thread_id,
+        None => post_id,
+    };
+    let admin_logs = vault
+        .run(move |c| {
+            c.prepare(sql)?
+                .query_map(params![id_param, datetime], |r| {
+                    Ok(AdminLog::Post {
+                        thread_id: r.get(0)?,
+                        post_id: r.get(1)?,
+                        title: r.get(2)?,
+                        content_preview: r.get(3)?,
+                        media: r.get(4)?,
+                        username: r.get(5)?,
+                        post_time: r.get(6)?,
+                        operation: r.get(7)?,
+                        operator: r.get(8)?,
+                        operation_time: r.get(9)?,
+                    })
+                })?
+                .collect::<Result<Vec<AdminLog>, _>>()
+        })
+        .await?;
+    Ok(admin_logs)
+}
+
 async fn get_user_records(
     vault: &Vault,
     user_id: i64,
@@ -499,7 +537,10 @@ async fn respond_post(
             "posts": posts,
         }))),
         None => {
-            let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
+            let admin_logs: Vec<AdminLog> =
+                get_post_related_admin_logs(&vault, Some(thread_id), None, time_machine_datetime)
+                    .await
+                    .unwrap();
             Ok(Json(json!({
                 "title": thread.title,
                 "user_id": thread.user_id,
@@ -537,7 +578,10 @@ async fn respond_comment(
     match time_machine_datetime {
         Some(_) => Ok(Json(json!({"comments": comments, "users": users}))),
         None => {
-            let admin_logs: Vec<AdminLog> = Vec::new(); // TODO: implement; for standard variant
+            let admin_logs: Vec<AdminLog> =
+                get_post_related_admin_logs(&vault, None, Some(post_id), time_machine_datetime)
+                    .await
+                    .unwrap();
             Ok(Json(
                 json!({"comments": comments, "users": users, "admin_logs": admin_logs}),
             ))
