@@ -341,16 +341,16 @@ async fn get_user_records(
             c.prepare(
                 "SELECT thread_id, pr_thread.title AS title, pr_post.id AS post_id, floor, content AS post_content, NULL AS comment_id, NULL AS comment_content, time
                      FROM pr_post
-                     LEFT JOIN pr_thread
+                     JOIN pr_thread
                      ON pr_post.thread_id = pr_thread.id
                      WHERE pr_post.user_id = ?
                      AND pr_post.time < ?
                      UNION
                      SELECT pr_thread.id, pr_thread.title, post_id, pr_post.floor, pr_post.content, pr_comment.id, pr_comment.content, pr_comment.time
                      FROM pr_comment
-                     LEFT JOIN pr_post
+                     JOIN pr_post
                      ON pr_comment.post_id = pr_post.id
-                     LEFT JOIN pr_thread
+                     JOIN pr_thread
                      ON pr_post.thread_id = pr_thread.id
                      WHERE pr_comment.user_id = ?
                      AND pr_comment.time < ?
