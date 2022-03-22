@@ -27,6 +27,10 @@ cargo run --release
 4. 为 uncover.db 内的所有表添加 `un_` 前缀
 5. 合并所有表，保存为 `vault.db`
 6. 视情况添加索引
+7. `git clone https://github.com/CatMe0w/ex_nihilo_vault`
+8. `cd ex_nihilo_vault`
+9. 把 `vault.db` 放在这里
+10. `cargo run --release`
 
 ## 开源许可
 

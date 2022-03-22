@@ -29,6 +29,10 @@ Download `vault.db.xz` from this repository, then decompress it to the root dire
 4. Add prefix `un_` to all tables in uncover.db
 5. Merge all tables, save as `vault.db`
 6. Add indexes if needed
+7. `git clone https://github.com/CatMe0w/ex_nihilo_vault`
+8. `cd ex_nihilo_vault`
+9. Put `vault.db` here
+10. `cargo run --release`
 
 ## License
 
