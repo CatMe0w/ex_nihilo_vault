@@ -15,16 +15,22 @@ xz -d vault.db.xz
 cargo run --release
 ```
 
-## Deploy
+## Get `vault.db`
+
+Running ex_nihilo_vault requires the `vault.db` file, which is the dataset for Project Ex Nihilo.
 
 ### Download directly
 
 Download `vault.db.xz` from this repository, then decompress it to the root directory of the project.
 
+See "Quick start" above for the detailed steps.
+
 ### Prepare by yourself
 
-1. Download and decompress proma.db.xz: https://github.com/CatMe0w/proma/releases/download/trigger-1/proma.db.xz
-2. Download and decompress uncover.db.xz: https://github.com/CatMe0w/backstage_uncover/releases/download/trigger-1/uncover.db.xz
+1. Download and decompress proma.db.xz:  
+https://github.com/CatMe0w/proma/releases/download/trigger-1/proma.db.xz
+2. Download and decompress uncover.db.xz:  
+https://github.com/CatMe0w/backstage_uncover/releases/download/trigger-1/uncover.db.xz
 3. Add prefix `pr_` to all tables in proma.db
 4. Add prefix `un_` to all tables in uncover.db
 5. Merge all tables, save as `vault.db`
