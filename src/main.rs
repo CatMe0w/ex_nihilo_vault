@@ -302,6 +302,8 @@ async fn get_post_related_admin_logs(
         Some(_) => "SELECT * FROM un_post WHERE thread_id = ? AND operation_time < ? AND operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%'",
         None => "SELECT * FROM un_post WHERE post_id = ? AND operation_time < ? AND operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%'",
     };
+    // 2022-02-16 01:XX -> rewinder
+    // 2022-02-26 23:XX -> rollwinder
     let id_param = match thread_id {
         Some(_) => thread_id,
         None => post_id,
@@ -526,33 +528,21 @@ async fn respond_post(
         );
     }
 
-    match time_machine_datetime {
-        Some(_) => Ok(Json(json!({
-            "title": thread.title,
-            "user_id": thread.user_id,
-            "reply_num":thread.reply_num,
-            "is_good": thread.is_good,
-            "comments": comments,
-            "users": users,
-            "posts": posts,
-        }))),
-        None => {
-            let admin_logs: Vec<AdminLog> =
-                get_post_related_admin_logs(&vault, Some(thread_id), None, time_machine_datetime)
-                    .await
-                    .unwrap();
-            Ok(Json(json!({
-                "title": thread.title,
-                "user_id": thread.user_id,
-                "reply_num":thread.reply_num,
-                "is_good": thread.is_good,
-                "comments": comments,
-                "users": users,
-                "posts": posts,
-                "admin_logs": admin_logs
-            })))
-        }
-    }
+    let admin_logs: Vec<AdminLog> =
+        get_post_related_admin_logs(&vault, Some(thread_id), None, time_machine_datetime)
+            .await
+            .unwrap();
+
+    Ok(Json(json!({
+        "title": thread.title,
+        "user_id": thread.user_id,
+        "reply_num":thread.reply_num,
+        "is_good": thread.is_good,
+        "comments": comments,
+        "users": users,
+        "posts": posts,
+        "admin_logs": admin_logs
+    })))
 }
 
 #[get("/comment/<post_id>/<page>?<time_machine_datetime>")]
@@ -575,18 +565,14 @@ async fn respond_comment(
         );
     }
 
-    match time_machine_datetime {
-        Some(_) => Ok(Json(json!({"comments": comments, "users": users}))),
-        None => {
-            let admin_logs: Vec<AdminLog> =
-                get_post_related_admin_logs(&vault, None, Some(post_id), time_machine_datetime)
-                    .await
-                    .unwrap();
-            Ok(Json(
-                json!({"comments": comments, "users": users, "admin_logs": admin_logs}),
-            ))
-        }
-    }
+    let admin_logs: Vec<AdminLog> =
+        get_post_related_admin_logs(&vault, None, Some(post_id), time_machine_datetime)
+            .await
+            .unwrap();
+
+    Ok(Json(
+        json!({"comments": comments, "users": users, "admin_logs": admin_logs}),
+    ))
 }
 
 #[get("/user/<user_type>/<user_clue>/<page>?<time_machine_datetime>")]
@@ -664,12 +650,12 @@ fn rocket() -> _ {
     rocket::build().attach(Vault::fairing()).mount(
         "/",
         routes![
-            rickroll,
             respond_thread,
             respond_post,
             respond_comment,
             respond_user,
-            respond_admin_log
+            respond_admin_log,
+            rickroll
         ],
     )
 }
