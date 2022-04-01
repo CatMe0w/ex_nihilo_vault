@@ -185,50 +185,92 @@ async fn get_threads(
     page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Vec<Thread>, rusqlite::Error> {
-    let datetime = get_datetime_sql_param(time_machine_datetime);
-    let threads = vault
-        .run(move |c| {
-            c.prepare(
-            "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content FROM (
+    let sql = match &time_machine_datetime {
+        None => "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content FROM (
+            SELECT * FROM (
                 SELECT * FROM (
-                    SELECT * FROM (
-                        SELECT thread_id, user_id, time
-                        FROM pr_post
-                        WHERE time < ?
-                        ORDER BY time DESC
-                    )
-                    GROUP BY thread_id
-                    UNION
-                    SELECT * FROM (
-                        SELECT thread_id, pr_comment.user_id, pr_comment.time
-                        FROM pr_comment
-                        JOIN pr_post ON pr_comment.post_id = pr_post.id
-                        WHERE pr_comment.time < ?
-                        ORDER BY pr_comment.time DESC
-                    )
-                    GROUP BY thread_id
+                    SELECT thread_id, user_id, time
+                    FROM pr_post
+                    WHERE time < ?2
                     ORDER BY time DESC
                 )
                 GROUP BY thread_id
+                UNION
+                SELECT * FROM (
+                    SELECT thread_id, pr_comment.user_id, pr_comment.time
+                    FROM pr_comment
+                    JOIN pr_post ON pr_comment.post_id = pr_post.id
+                    WHERE pr_comment.time < ?3
+                    ORDER BY pr_comment.time DESC
+                )
+                GROUP BY thread_id
                 ORDER BY time DESC
-                LIMIT ?,50
-            ) AS x
-            JOIN pr_thread AS t ON x.thread_id = t.id
-            JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
-            ORDER BY x.time DESC"
-            )? // feel the pain: this monster takes ~80 ms to execute and eats a lot of cpu, use proxy_cache to mitigate
-                .query_map(params![datetime, datetime, (page - 1) * 50], |r| {
-                    Ok(Thread {
-                        thread_id: r.get(0)?,
-                        op_user_id: r.get(1)?,
-                        title: r.get(2)?,
-                        user_id: r.get(3)?,
-                        time: r.get(4)?,
-                        reply_num: r.get(5)?,
-                        is_good: r.get(6)?,
-                        op_post_content: serde_json::from_str(r.get::<usize, String>(7)?.as_str()).unwrap(),
-                    })
-                })?
+            )
+            GROUP BY thread_id
+            ORDER BY time DESC
+            LIMIT ?4,50
+        ) AS x
+        JOIN pr_thread AS t ON x.thread_id = t.id
+        JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
+        ORDER BY x.time DESC", // feel the pain: this monster takes ~80 ms to execute and eats a lot of cpu, use proxy_cache to mitigate
+        Some(_) => "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content,operation FROM (
+            SELECT * FROM (
+                SELECT y.*,operation FROM (
+                    SELECT * FROM (
+                        SELECT * FROM (
+                            SELECT thread_id, user_id, time
+                            FROM pr_post
+                            WHERE time < ?1
+                            ORDER BY time DESC
+                        )
+                        GROUP BY thread_id
+                        UNION
+                        SELECT * FROM (
+                            SELECT thread_id, pr_comment.user_id, pr_comment.time
+                            FROM pr_comment
+                            JOIN pr_post ON pr_comment.post_id = pr_post.id
+                            WHERE pr_comment.time < ?2
+                            ORDER BY pr_comment.time DESC
+                        )
+                        GROUP BY thread_id
+                        ORDER BY time DESC
+                    )
+                    GROUP BY thread_id
+                    ORDER BY time DESC
+                ) AS y 
+                LEFT JOIN un_post AS u ON u.thread_id = y.thread_id AND u.post_id IS NULL AND u.operation LIKE '%删贴' AND operation_time < ?3 AND operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%' 
+                GROUP BY y.thread_id
+            )
+            WHERE operation IS NULL OR operation <> '删贴'
+            ORDER BY time DESC
+			LIMIT ?4,50
+        ) AS x
+        JOIN pr_thread AS t ON x.thread_id = t.id
+        JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
+        ORDER BY x.time DESC" // this one takes 90 ms, fuck
+    };
+    let datetime = get_datetime_sql_param(time_machine_datetime);
+    let threads = vault
+        .run(move |c| {
+            c.prepare(sql)?
+                .query_map(
+                    params![datetime, datetime, datetime, (page - 1) * 50],
+                    |r| {
+                        Ok(Thread {
+                            thread_id: r.get(0)?,
+                            op_user_id: r.get(1)?,
+                            title: r.get(2)?,
+                            user_id: r.get(3)?,
+                            time: r.get(4)?,
+                            reply_num: r.get(5)?,
+                            is_good: r.get(6)?,
+                            op_post_content: serde_json::from_str(
+                                r.get::<usize, String>(7)?.as_str(),
+                            )
+                            .unwrap(),
+                        })
+                    },
+                )?
                 .collect::<Result<Vec<Thread>, _>>()
         })
         .await?;
