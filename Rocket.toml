@@ -3,3 +3,6 @@ address = "127.0.0.1"
 
 [default.databases.vault]
 url = "vault.db"
+
+[release]
+log_level = "off"
