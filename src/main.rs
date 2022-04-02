@@ -180,27 +180,35 @@ fn get_datetime_sql_param(datetime: Option<String>) -> String {
     }
 }
 
+fn get_keyword_sql_param(keyword: Option<String>) -> String {
+    match keyword {
+        Some(keyword) => format!("%{}%", keyword),
+        None => "%%".to_string(),
+    }
+}
+
 async fn get_threads(
     vault: &Vault,
     page: u32,
     time_machine_datetime: Option<String>,
+    search_keyword: Option<String>
 ) -> Result<Vec<Thread>, rusqlite::Error> {
     let sql = match &time_machine_datetime {
         None => "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content FROM (
             SELECT * FROM (
                 SELECT * FROM (
-                    SELECT thread_id, user_id, time
+                    SELECT thread_id, user_id, time, content
                     FROM pr_post
-                    WHERE time < ?2
+                    WHERE time < ?1 AND content LIKE ?2
                     ORDER BY time DESC
                 )
                 GROUP BY thread_id
                 UNION
                 SELECT * FROM (
-                    SELECT thread_id, pr_comment.user_id, pr_comment.time
+                    SELECT thread_id, pr_comment.user_id, pr_comment.time, pr_comment.content
                     FROM pr_comment
                     JOIN pr_post ON pr_comment.post_id = pr_post.id
-                    WHERE pr_comment.time < ?3
+                    WHERE pr_comment.time < ?1 AND pr_comment.content LIKE ?2
                     ORDER BY pr_comment.time DESC
                 )
                 GROUP BY thread_id
@@ -208,28 +216,28 @@ async fn get_threads(
             )
             GROUP BY thread_id
             ORDER BY time DESC
-            LIMIT ?4,50
+            LIMIT ?3,50
         ) AS x
         JOIN pr_thread AS t ON x.thread_id = t.id
         JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
-        ORDER BY x.time DESC", // feel the pain: this monster takes ~80 ms to execute and eats a lot of cpu, use proxy_cache to mitigate
+        ORDER BY x.time DESC", // feel the pain: this monster takes ~110 ms to execute and eats a lot of cpu, use proxy_cache to mitigate
         Some(_) => "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content,operation FROM (
             SELECT * FROM (
                 SELECT y.*,operation FROM (
                     SELECT * FROM (
                         SELECT * FROM (
-                            SELECT thread_id, user_id, time
+                            SELECT thread_id, user_id, time, content
                             FROM pr_post
-                            WHERE time < ?1
+                            WHERE time < ?1 AND content LIKE ?2
                             ORDER BY time DESC
                         )
                         GROUP BY thread_id
                         UNION
                         SELECT * FROM (
-                            SELECT thread_id, pr_comment.user_id, pr_comment.time
+                            SELECT thread_id, pr_comment.user_id, pr_comment.time, pr_comment.content
                             FROM pr_comment
                             JOIN pr_post ON pr_comment.post_id = pr_post.id
-                            WHERE pr_comment.time < ?2
+                            WHERE pr_comment.time < ?1 AND pr_comment.content LIKE ?2
                             ORDER BY pr_comment.time DESC
                         )
                         GROUP BY thread_id
@@ -237,24 +245,25 @@ async fn get_threads(
                     )
                     GROUP BY thread_id
                     ORDER BY time DESC
-                ) AS y 
-                LEFT JOIN un_post AS u ON u.thread_id = y.thread_id AND u.post_id IS NULL AND u.operation LIKE '%删贴' AND operation_time < ?3 AND operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%' 
+                ) AS y
+                LEFT JOIN un_post AS u ON u.thread_id = y.thread_id AND u.post_id IS NULL AND u.operation LIKE '%删贴' AND operation_time < ?1 AND operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%' 
                 GROUP BY y.thread_id
             )
             WHERE operation IS NULL OR operation <> '删贴'
             ORDER BY time DESC
-			LIMIT ?4,50
+			LIMIT ?3,50
         ) AS x
         JOIN pr_thread AS t ON x.thread_id = t.id
         JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
-        ORDER BY x.time DESC" // this one takes 90 ms, fuck
+        ORDER BY x.time DESC" // this one takes 120 ms, fuck
     };
     let datetime = get_datetime_sql_param(time_machine_datetime);
+    let keyword = get_keyword_sql_param(search_keyword);
     let threads = vault
         .run(move |c| {
             c.prepare(sql)?
                 .query_map(
-                    params![datetime, datetime, datetime, (page - 1) * 50],
+                    params![datetime, keyword, (page - 1) * 50],
                     |r| {
                         Ok(Thread {
                             thread_id: r.get(0)?,
@@ -503,13 +512,14 @@ async fn get_admin_logs(
     Ok(admin_logs)
 }
 
-#[get("/thread/<page>?<time_machine_datetime>")]
+#[get("/thread/<page>?<time_machine_datetime>&<search_keyword>")]
 async fn respond_thread(
     vault: Vault,
     page: u32,
     time_machine_datetime: Option<String>,
+    search_keyword: Option<String>
 ) -> Result<Json<serde_json::Value>, Status> {
-    let threads = get_threads(&vault, page, time_machine_datetime.clone())
+    let threads = get_threads(&vault, page, time_machine_datetime.clone(),search_keyword.clone())
         .await
         .unwrap();
 
