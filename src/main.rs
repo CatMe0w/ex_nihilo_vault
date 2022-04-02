@@ -387,8 +387,8 @@ async fn get_user_records(
                      FROM pr_post
                      JOIN pr_thread
                      ON pr_post.thread_id = pr_thread.id
-                     WHERE pr_post.user_id = ?
-                     AND pr_post.time < ?
+                     WHERE pr_post.user_id = ?1
+                     AND pr_post.time < ?2
                      UNION
                      SELECT pr_thread.id, pr_thread.title, post_id, pr_post.floor, pr_post.content, pr_comment.id, pr_comment.content, pr_comment.time
                      FROM pr_comment
@@ -396,12 +396,12 @@ async fn get_user_records(
                      ON pr_comment.post_id = pr_post.id
                      JOIN pr_thread
                      ON pr_post.thread_id = pr_thread.id
-                     WHERE pr_comment.user_id = ?
-                     AND pr_comment.time < ?
+                     WHERE pr_comment.user_id = ?1
+                     AND pr_comment.time < ?2
                      ORDER BY time DESC
-                     LIMIT ?,50",
+                     LIMIT ?3,50",
             )? // won't use sql next time
-            .query_map(params![user_id, datetime, user_id, datetime, (page - 1) * 50], |r| {
+            .query_map(params![user_id, datetime, (page - 1) * 50], |r| {
                 match r.get::<usize, Option<i64>>(5)? {
                     None => Ok(UserRecord::Post {
                         _type: "post".to_string(),
