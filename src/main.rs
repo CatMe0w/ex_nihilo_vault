@@ -517,7 +517,10 @@ async fn respond_thread(
         return Err(Status::NotFound);
     }
 
-    let threads = &full_threads[(page - 1) as usize * 50..(page * 50) as usize];
+    let threads = match max_page {
+        1 => &full_threads[..],
+        _ => &full_threads[(page - 1) as usize * 50..(page * 50) as usize],
+    };
 
     let mut op_users: Vec<User> = Vec::new();
     for thread in threads {
@@ -564,7 +567,10 @@ async fn respond_post(
         return Err(Status::NotFound);
     }
 
-    let posts = &full_posts[(page - 1) as usize * 50..(page * 50) as usize];
+    let posts = match max_page {
+        1 => &full_posts[..],
+        _ => &full_posts[(page - 1) as usize * 50..(page * 50) as usize],
+    };
 
     let mut comments: Vec<Vec<Comment>> = Vec::new();
     let mut comment_max_pages: Vec<u32> = Vec::new();
@@ -572,8 +578,17 @@ async fn respond_post(
         let full_comments = get_comments(&vault, post.post_id, time_machine_datetime.clone())
             .await
             .unwrap();
+        if full_comments.len() == 0 {
+            comment_max_pages.push(0);
+            comments.push(Vec::new());
+            continue;
+        };
         comment_max_pages.push((full_comments.len() as f32 / 10.0).ceil() as u32);
-        comments.push(full_comments[0..10].to_vec());
+        let page_one_comments = match comment_max_pages.last().unwrap() {
+            1 => full_comments,
+            _ => full_comments[..10].to_vec(),
+        };
+        comments.push(page_one_comments);
     }
 
     let mut users: Vec<User> = Vec::new();
@@ -635,7 +650,10 @@ async fn respond_comment(
         return Err(Status::NotFound);
     }
 
-    let comments = &full_comments[(page - 1) as usize * 10..(page * 10) as usize].to_vec();
+    let comments = match max_page {
+        1 => &full_comments[..],
+        _ => &full_comments[(page - 1) as usize * 10..(page * 10) as usize],
+    };
 
     let mut users: Vec<User> = Vec::new();
     for comment in comments {
@@ -683,7 +701,10 @@ async fn respond_user(
                 return Err(Status::NotFound);
             }
 
-            let records = &full_records[(page - 1) as usize * 50..(page as usize) * 50];
+            let records = match max_page {
+                1 => &full_records[..],
+                _ => &full_records[(page - 1) as usize * 30..(page * 30) as usize],
+            };
 
             Ok(Json(json!({
                 "user_id": user.user_id,
