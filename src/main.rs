@@ -1,11 +1,15 @@
 #[macro_use]
 extern crate rocket;
-use rocket::http::Status;
+use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::{Header, Status};
 use rocket::response::content::Html;
 use rocket::serde::{json::Json, Deserialize, Serialize};
+use rocket::{Request, Response};
 use rocket_sync_db_pools::rusqlite::params;
 use rocket_sync_db_pools::{database, rusqlite};
 use serde_json::json;
+
+pub struct CORS;
 
 #[database("vault")]
 struct Vault(rusqlite::Connection);
@@ -757,9 +761,29 @@ async fn rickroll() -> Html<&'static str> {
     Html("<!doctype html><meta name='referrer' content='no-referrer'><meta http-equiv='refresh' content='0; URL=https://www.bilibili.com/video/av202867917'>")
 }
 
+// https://stackoverflow.com/a/64904947/10144204
+#[rocket::async_trait]
+impl Fairing for CORS {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to responses",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+        response.set_header(Header::new("Access-Control-Allow-Methods", "POST, GET"));
+        response.set_header(Header::new(
+            "Content-Type",
+            "application/json; charset=utf-8",
+        ));
+    }
+}
+
 #[launch]
 fn rocket() -> _ {
-    rocket::build().attach(Vault::fairing()).mount(
+    rocket::build().attach(Vault::fairing()).attach(CORS).mount(
         "/",
         routes![
             respond_thread,
