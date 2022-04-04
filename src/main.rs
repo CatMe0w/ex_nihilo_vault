@@ -523,6 +523,7 @@ async fn respond_thread(
 
     let threads = match max_page {
         1 => &full_threads[..],
+        page if page == max_page => &full_threads[(page - 1) as usize * 50..],
         _ => &full_threads[(page - 1) as usize * 50..(page * 50) as usize],
     };
 
@@ -573,6 +574,7 @@ async fn respond_post(
 
     let posts = match max_page {
         1 => &full_posts[..],
+        page if page == max_page => &full_posts[(page - 1) as usize * 50..],
         _ => &full_posts[(page - 1) as usize * 50..(page * 50) as usize],
     };
 
@@ -656,6 +658,7 @@ async fn respond_comment(
 
     let comments = match max_page {
         1 => &full_comments[..],
+        page if page == max_page => &full_comments[(page - 1) as usize * 10..],
         _ => &full_comments[(page - 1) as usize * 10..(page * 10) as usize],
     };
 
@@ -707,6 +710,7 @@ async fn respond_user(
 
             let records = match max_page {
                 1 => &full_records[..],
+                page if page == max_page => &full_records[(page - 1) as usize * 30..],
                 _ => &full_records[(page - 1) as usize * 30..(page * 30) as usize],
             };
 
