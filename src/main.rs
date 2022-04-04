@@ -121,7 +121,7 @@ struct Post {
     tail: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Comment {
     comment_id: i64,
     user_id: i64,
@@ -189,9 +189,8 @@ fn get_keyword_sql_param(keyword: Option<String>) -> String {
 
 async fn get_threads(
     vault: &Vault,
-    page: u32,
     time_machine_datetime: Option<String>,
-    search_keyword: Option<String>
+    search_keyword: Option<String>,
 ) -> Result<Vec<Thread>, rusqlite::Error> {
     let sql = match &time_machine_datetime {
         None => "SELECT x.thread_id, t.user_id, title, x.user_id, x.time, reply_num, is_good, p.content FROM (
@@ -216,7 +215,6 @@ async fn get_threads(
             )
             GROUP BY thread_id
             ORDER BY time DESC
-            LIMIT ?3,50
         ) AS x
         JOIN pr_thread AS t ON x.thread_id = t.id
         JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
@@ -251,7 +249,6 @@ async fn get_threads(
             )
             WHERE operation IS NULL OR operation <> '删贴'
             ORDER BY time DESC
-			LIMIT ?3,50
         ) AS x
         JOIN pr_thread AS t ON x.thread_id = t.id
         JOIN pr_post AS p ON x.thread_id = p.thread_id AND p.floor = 1
@@ -262,24 +259,19 @@ async fn get_threads(
     let threads = vault
         .run(move |c| {
             c.prepare(sql)?
-                .query_map(
-                    params![datetime, keyword, (page - 1) * 50],
-                    |r| {
-                        Ok(Thread {
-                            thread_id: r.get(0)?,
-                            op_user_id: r.get(1)?,
-                            title: r.get(2)?,
-                            user_id: r.get(3)?,
-                            time: r.get(4)?,
-                            reply_num: r.get(5)?,
-                            is_good: r.get(6)?,
-                            op_post_content: serde_json::from_str(
-                                r.get::<usize, String>(7)?.as_str(),
-                            )
+                .query_map(params![datetime, keyword], |r| {
+                    Ok(Thread {
+                        thread_id: r.get(0)?,
+                        op_user_id: r.get(1)?,
+                        title: r.get(2)?,
+                        user_id: r.get(3)?,
+                        time: r.get(4)?,
+                        reply_num: r.get(5)?,
+                        is_good: r.get(6)?,
+                        op_post_content: serde_json::from_str(r.get::<usize, String>(7)?.as_str())
                             .unwrap(),
-                        })
-                    },
-                )?
+                    })
+                })?
                 .collect::<Result<Vec<Thread>, _>>()
         })
         .await?;
@@ -289,28 +281,25 @@ async fn get_threads(
 async fn get_posts(
     vault: &Vault,
     thread_id: i64,
-    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Vec<Post>, rusqlite::Error> {
     let datetime = get_datetime_sql_param(time_machine_datetime);
     let posts = vault
         .run(move |c| {
-            c.prepare(
-                "SELECT * FROM pr_post WHERE thread_id = ? AND time < ? ORDER BY floor LIMIT ?,30",
-            )?
-            .query_map(params![thread_id, datetime, (page - 1) * 30], |r| {
-                Ok(Post {
-                    post_id: r.get(0)?,
-                    floor: r.get(1)?,
-                    user_id: r.get(2)?,
-                    content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(), // so ugly
-                    time: r.get(4)?,
-                    comment_num: r.get(5)?,
-                    signature: r.get(6)?,
-                    tail: r.get(7)?,
-                })
-            })?
-            .collect::<Result<Vec<Post>, _>>()
+            c.prepare("SELECT * FROM pr_post WHERE thread_id = ? AND time < ? ORDER BY floor")?
+                .query_map(params![thread_id, datetime], |r| {
+                    Ok(Post {
+                        post_id: r.get(0)?,
+                        floor: r.get(1)?,
+                        user_id: r.get(2)?,
+                        content: serde_json::from_str(r.get::<usize, String>(3)?.as_str()).unwrap(), // so ugly
+                        time: r.get(4)?,
+                        comment_num: r.get(5)?,
+                        signature: r.get(6)?,
+                        tail: r.get(7)?,
+                    })
+                })?
+                .collect::<Result<Vec<Post>, _>>()
         })
         .await?;
     Ok(posts)
@@ -319,24 +308,21 @@ async fn get_posts(
 async fn get_comments(
     vault: &Vault,
     post_id: i64,
-    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Vec<Comment>, rusqlite::Error> {
     let datetime = get_datetime_sql_param(time_machine_datetime);
     let comments = vault
         .run(move |c| {
-            c.prepare(
-                "SELECT * FROM pr_comment WHERE post_id = ? AND time < ? ORDER BY time LIMIT ?,10",
-            )?
-            .query_map(params![post_id, datetime, (page - 1) * 10], |r| {
-                Ok(Comment {
-                    comment_id: r.get(0)?,
-                    user_id: r.get(1)?,
-                    content: serde_json::from_str(r.get::<usize, String>(2)?.as_str()).unwrap(),
-                    time: r.get(3)?,
-                })
-            })?
-            .collect::<Result<Vec<Comment>, _>>()
+            c.prepare("SELECT * FROM pr_comment WHERE post_id = ? AND time < ? ORDER BY time")?
+                .query_map(params![post_id, datetime], |r| {
+                    Ok(Comment {
+                        comment_id: r.get(0)?,
+                        user_id: r.get(1)?,
+                        content: serde_json::from_str(r.get::<usize, String>(2)?.as_str()).unwrap(),
+                        time: r.get(3)?,
+                    })
+                })?
+                .collect::<Result<Vec<Comment>, _>>()
         })
         .await?;
     Ok(comments)
@@ -385,7 +371,6 @@ async fn get_post_related_admin_logs(
 async fn get_user_records(
     vault: &Vault,
     user_id: i64,
-    page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Vec<UserRecord>, rusqlite::Error> {
     let datetime = get_datetime_sql_param(time_machine_datetime);
@@ -407,10 +392,9 @@ async fn get_user_records(
                      ON pr_post.thread_id = pr_thread.id
                      WHERE pr_comment.user_id = ?1
                      AND pr_comment.time < ?2
-                     ORDER BY time DESC
-                     LIMIT ?3,50",
+                     ORDER BY time DESC",
             )? // won't use sql next time
-            .query_map(params![user_id, datetime, (page - 1) * 50], |r| {
+            .query_map(params![user_id, datetime], |r| {
                 match r.get::<usize, Option<i64>>(5)? {
                     None => Ok(UserRecord::Post {
                         _type: "post".to_string(),
@@ -517,14 +501,26 @@ async fn respond_thread(
     vault: Vault,
     page: u32,
     time_machine_datetime: Option<String>,
-    search_keyword: Option<String>
+    search_keyword: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    let threads = get_threads(&vault, page, time_machine_datetime.clone(),search_keyword.clone())
-        .await
-        .unwrap();
+    let full_threads = get_threads(
+        &vault,
+        time_machine_datetime.clone(),
+        search_keyword.clone(),
+    )
+    .await
+    .unwrap();
+
+    let max_page = (full_threads.len() as f32 / 50.0).ceil() as u32;
+
+    if page > max_page {
+        return Err(Status::NotFound);
+    }
+
+    let threads = &full_threads[(page - 1) as usize * 50..(page * 50) as usize];
 
     let mut op_users: Vec<User> = Vec::new();
-    for thread in &threads {
+    for thread in threads {
         op_users.push(
             get_user_metadata(&vault, UserType::UserId, thread.op_user_id.to_string())
                 .await
@@ -533,7 +529,7 @@ async fn respond_thread(
     }
 
     let mut last_reply_users: Vec<User> = Vec::new();
-    for thread in &threads {
+    for thread in threads {
         last_reply_users.push(
             get_user_metadata(&vault, UserType::UserId, thread.user_id.to_string())
                 .await
@@ -542,7 +538,7 @@ async fn respond_thread(
     }
 
     Ok(Json(
-        json!({"threads": threads, "op_users": op_users, "last_reply_users": last_reply_users}),
+        json!({"threads": threads, "op_users": op_users, "last_reply_users": last_reply_users, "max_page": max_page}),
     ))
 }
 
@@ -558,26 +554,48 @@ async fn respond_post(
         None => return Err(Status::NotFound),
     };
 
-    let posts = get_posts(&vault, thread_id, page, time_machine_datetime.clone())
+    let full_posts = get_posts(&vault, thread_id, time_machine_datetime.clone())
         .await
         .unwrap();
 
+    let max_page = (full_posts.len() as f32 / 30.0).ceil() as u32;
+
+    if page > max_page {
+        return Err(Status::NotFound);
+    }
+
+    let posts = &full_posts[(page - 1) as usize * 50..(page * 50) as usize];
+
     let mut comments: Vec<Vec<Comment>> = Vec::new();
-    for post in &posts {
-        comments.push(
-            get_comments(&vault, post.post_id, 1, time_machine_datetime.clone())
-                .await
-                .unwrap(),
-        );
+    let mut comment_max_pages: Vec<u32> = Vec::new();
+    for post in posts {
+        let full_comments = get_comments(&vault, post.post_id, time_machine_datetime.clone())
+            .await
+            .unwrap();
+        comment_max_pages.push((full_comments.len() as f32 / 10.0).ceil() as u32);
+        comments.push(full_comments[0..10].to_vec());
     }
 
     let mut users: Vec<User> = Vec::new();
-    for post in &posts {
+    for post in posts {
         users.push(
             get_user_metadata(&vault, UserType::UserId, post.user_id.to_string())
                 .await
                 .unwrap(),
         );
+    }
+
+    let mut comment_users: Vec<Vec<User>> = Vec::new();
+    for post in &comments {
+        let mut comment_user: Vec<User> = Vec::new();
+        for comment in post {
+            comment_user.push(
+                get_user_metadata(&vault, UserType::UserId, comment.user_id.to_string())
+                    .await
+                    .unwrap(),
+            );
+        }
+        comment_users.push(comment_user);
     }
 
     let admin_logs: Vec<AdminLog> =
@@ -591,9 +609,12 @@ async fn respond_post(
         "reply_num":thread.reply_num,
         "is_good": thread.is_good,
         "comments": comments,
+        "comment_users": comment_users,
+        "comment_max_pages": comment_max_pages,
         "users": users,
         "posts": posts,
-        "admin_logs": admin_logs
+        "admin_logs": admin_logs,
+        "max_page": max_page
     })))
 }
 
@@ -604,12 +625,20 @@ async fn respond_comment(
     page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
-    let comments = get_comments(&vault, post_id, page, time_machine_datetime.clone())
+    let full_comments = get_comments(&vault, post_id, time_machine_datetime.clone())
         .await
         .unwrap();
 
+    let max_page = (full_comments.len() as f32 / 10.0).ceil() as u32;
+
+    if page > max_page {
+        return Err(Status::NotFound);
+    }
+
+    let comments = &full_comments[(page - 1) as usize * 10..(page * 10) as usize].to_vec();
+
     let mut users: Vec<User> = Vec::new();
-    for comment in &comments {
+    for comment in comments {
         users.push(
             get_user_metadata(&vault, UserType::UserId, comment.user_id.to_string())
                 .await
@@ -644,15 +673,25 @@ async fn respond_user(
     };
     match get_user_metadata(&vault, user_type, user_clue).await {
         Some(user) => {
-            let records = get_user_records(&vault, user.user_id, page, time_machine_datetime)
+            let full_records = get_user_records(&vault, user.user_id, time_machine_datetime)
                 .await
                 .unwrap();
+
+            let max_page = (full_records.len() as f32 / 30.0).ceil() as u32;
+
+            if page > max_page {
+                return Err(Status::NotFound);
+            }
+
+            let records = &full_records[(page - 1) as usize * 50..(page as usize) * 50];
+
             Ok(Json(json!({
                 "user_id": user.user_id,
                 "username": user.username,
                 "nickname": user.nickname,
                 "avatar": user.avatar,
                 "records": records,
+                "max_page": max_page
             })))
         }
         None => Err(Status::NotFound),
