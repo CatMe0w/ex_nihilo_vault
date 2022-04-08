@@ -9,7 +9,7 @@ use rocket_sync_db_pools::rusqlite::params;
 use rocket_sync_db_pools::{database, rusqlite};
 use serde_json::json;
 
-pub struct CORS;
+struct CORS;
 
 #[database("vault")]
 struct Vault(rusqlite::Connection);
@@ -777,11 +777,7 @@ impl Fairing for CORS {
 
     async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
-        response.set_header(Header::new("Access-Control-Allow-Methods", "POST, GET"));
-        response.set_header(Header::new(
-            "Content-Type",
-            "application/json; charset=utf-8",
-        ));
+        response.set_header(Header::new("Access-Control-Allow-Methods", "GET"));
     }
 }
 
