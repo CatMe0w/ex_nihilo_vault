@@ -557,9 +557,20 @@ async fn respond_post(
     page: u32,
     time_machine_datetime: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
+    let admin_logs: Vec<AdminLog> =
+        get_post_related_admin_logs(&vault, Some(thread_id), None, time_machine_datetime.clone())
+            .await
+            .unwrap();
+
     let thread = match get_thread_metadata(&vault, thread_id).await {
         Some(thread) => thread,
-        None => return Err(Status::NotFound),
+        None => {
+            if admin_logs.len() == 0 {
+                return Err(Status::NotFound);
+            } else {
+                return Ok(Json(json!({"posts": [], "admin_logs": admin_logs})));
+            }
+        },
     };
 
     let full_posts = get_posts(&vault, thread_id, time_machine_datetime.clone())
@@ -618,11 +629,6 @@ async fn respond_post(
         }
         comment_users.push(comment_user);
     }
-
-    let admin_logs: Vec<AdminLog> =
-        get_post_related_admin_logs(&vault, Some(thread_id), None, time_machine_datetime)
-            .await
-            .unwrap();
 
     Ok(Json(json!({
         "title": thread.title,
