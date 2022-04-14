@@ -81,7 +81,7 @@ enum AdminLog {
         avatar: String,
         username: String,
         operation: String,
-        duration: String,
+        duration: Option<String>,
         operator: String,
         operation_time: String,
     },
