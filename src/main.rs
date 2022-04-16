@@ -507,6 +507,10 @@ async fn respond_thread(
     time_machine_datetime: Option<String>,
     search_keyword: Option<String>,
 ) -> Result<Json<serde_json::Value>, Status> {
+    let search_keyword = match search_keyword {
+        Some(keyword) => Some(keyword.split_whitespace().next().unwrap().to_string()),
+        None => None,
+    }; // XXX: one keyword only?!
     let full_threads = get_threads(
         &vault,
         time_machine_datetime.clone(),
