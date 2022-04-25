@@ -590,7 +590,7 @@ async fn respond_post(
     let posts = match max_page {
         1 => &full_posts[..],
         _ if page == max_page => &full_posts[(page - 1) as usize * 30..],
-        _ => &full_posts[(page - 1) as usize * 50..(page * 30) as usize],
+        _ => &full_posts[(page - 1) as usize * 30..(page * 30) as usize],
     };
 
     let mut comments: Vec<Vec<Comment>> = Vec::new();
