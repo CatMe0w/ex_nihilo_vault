@@ -9,6 +9,12 @@ use rocket_sync_db_pools::rusqlite::params;
 use rocket_sync_db_pools::{database, rusqlite};
 use serde_json::json;
 
+const THREAD_CAPACITY_PER_PAGE: u32 = 50;
+const POST_CAPACITY_PER_PAGE: u32 = 30;
+const COMMENT_CAPACITY_PER_PAGE: u32 = 10;
+const USER_RECORD_CAPACITY_PER_PAGE: u32 = 30;
+const ADMIN_LOG_CAPACITY_PER_PAGE: u32 = 50;
+
 struct CORS;
 
 #[database("vault")]
@@ -437,13 +443,13 @@ async fn get_admin_logs(
     let admin_logs = match category {
         AdminLogCategory::Post => {
             let sql = match hide_the_showdown {
-                true => "SELECT * FROM un_post WHERE operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%' LIMIT ?,50",
-                false => "SELECT * FROM un_post LIMIT ?,50",
+                true => format!("{}{}", "SELECT * FROM un_post WHERE operation_time NOT LIKE '2022-02-26 23:%' AND operation_time NOT LIKE '2022-02-16 01:%' LIMIT ?,", ADMIN_LOG_CAPACITY_PER_PAGE),
+                false => format!("{}{}", "SELECT * FROM un_post LIMIT ?,", ADMIN_LOG_CAPACITY_PER_PAGE),
             };
             vault
                 .run(move |c| {
-                    c.prepare(sql)?
-                        .query_map(params![(page - 1) * 50], |r| {
+                    c.prepare(sql.as_str())?
+                        .query_map(params![(page - 1) * ADMIN_LOG_CAPACITY_PER_PAGE], |r| {
                             Ok(AdminLog::Post {
                                 thread_id: r.get(0)?,
                                 post_id: r.get(1)?,
@@ -464,35 +470,39 @@ async fn get_admin_logs(
         AdminLogCategory::User => {
             vault
                 .run(move |c| {
-                    c.prepare("SELECT * FROM un_user LIMIT ?,50")?
-                        .query_map(params![(page - 1) * 50], |r| {
-                            Ok(AdminLog::User {
-                                avatar: r.get(0)?,
-                                username: r.get(1)?,
-                                operation: r.get(2)?,
-                                duration: r.get(3)?,
-                                operator: r.get(4)?,
-                                operation_time: r.get(5)?,
-                            })
-                        })?
-                        .collect::<Result<Vec<AdminLog>, _>>()
+                    c.prepare(
+                        format!("{}{}", "SELECT * FROM un_user LIMIT ?,", ADMIN_LOG_CAPACITY_PER_PAGE).as_str(),
+                    )?
+                    .query_map(params![(page - 1) * ADMIN_LOG_CAPACITY_PER_PAGE], |r| {
+                        Ok(AdminLog::User {
+                            avatar: r.get(0)?,
+                            username: r.get(1)?,
+                            operation: r.get(2)?,
+                            duration: r.get(3)?,
+                            operator: r.get(4)?,
+                            operation_time: r.get(5)?,
+                        })
+                    })?
+                    .collect::<Result<Vec<AdminLog>, _>>()
                 })
                 .await?
         }
         AdminLogCategory::Bawu => {
             vault
                 .run(move |c| {
-                    c.prepare("SELECT * FROM un_bawu LIMIT ?,50")?
-                        .query_map(params![(page - 1) * 50], |r| {
-                            Ok(AdminLog::Bawu {
-                                avatar: r.get(0)?,
-                                username: r.get(1)?,
-                                operation: r.get(2)?,
-                                operator: r.get(3)?,
-                                operation_time: r.get(4)?,
-                            })
-                        })?
-                        .collect::<Result<Vec<AdminLog>, _>>()
+                    c.prepare(
+                        format!("{}{}", "SELECT * FROM un_bawu LIMIT ?,", ADMIN_LOG_CAPACITY_PER_PAGE).as_str(),
+                    )?
+                    .query_map(params![(page - 1) * ADMIN_LOG_CAPACITY_PER_PAGE], |r| {
+                        Ok(AdminLog::Bawu {
+                            avatar: r.get(0)?,
+                            username: r.get(1)?,
+                            operation: r.get(2)?,
+                            operator: r.get(3)?,
+                            operation_time: r.get(4)?,
+                        })
+                    })?
+                    .collect::<Result<Vec<AdminLog>, _>>()
                 })
                 .await?
         }
@@ -519,7 +529,7 @@ async fn respond_thread(
     .await
     .unwrap();
 
-    let max_page = (full_threads.len() as f32 / 50.0).ceil() as u32;
+    let max_page = (full_threads.len() as f32 / THREAD_CAPACITY_PER_PAGE as f32).ceil() as u32;
 
     if page > max_page {
         return Err(Status::NotFound);
@@ -527,8 +537,11 @@ async fn respond_thread(
 
     let threads = match max_page {
         1 => &full_threads[..],
-        _ if page == max_page => &full_threads[(page - 1) as usize * 50..],
-        _ => &full_threads[(page - 1) as usize * 50..(page * 50) as usize],
+        _ if page == max_page => &full_threads[((page - 1) * THREAD_CAPACITY_PER_PAGE) as usize..],
+        _ => {
+            &full_threads[((page - 1) * THREAD_CAPACITY_PER_PAGE) as usize
+                ..(page * THREAD_CAPACITY_PER_PAGE) as usize]
+        }
     };
 
     let mut op_users: Vec<User> = Vec::new();
@@ -574,14 +587,14 @@ async fn respond_post(
             } else {
                 return Ok(Json(json!({"posts": [], "admin_logs": admin_logs})));
             }
-        },
+        }
     };
 
     let full_posts = get_posts(&vault, thread_id, time_machine_datetime.clone())
         .await
         .unwrap();
 
-    let max_page = (full_posts.len() as f32 / 30.0).ceil() as u32;
+    let max_page = (full_posts.len() as f32 / POST_CAPACITY_PER_PAGE as f32).ceil() as u32;
 
     if page > max_page {
         return Err(Status::NotFound);
@@ -589,8 +602,11 @@ async fn respond_post(
 
     let posts = match max_page {
         1 => &full_posts[..],
-        _ if page == max_page => &full_posts[(page - 1) as usize * 30..],
-        _ => &full_posts[(page - 1) as usize * 30..(page * 30) as usize],
+        _ if page == max_page => &full_posts[((page - 1) * POST_CAPACITY_PER_PAGE) as usize..],
+        _ => {
+            &full_posts[((page - 1) * POST_CAPACITY_PER_PAGE) as usize
+                ..(page * POST_CAPACITY_PER_PAGE) as usize]
+        }
     };
 
     let mut comments: Vec<Vec<Comment>> = Vec::new();
@@ -604,10 +620,11 @@ async fn respond_post(
             comments.push(Vec::new());
             continue;
         };
-        comment_max_pages.push((full_comments.len() as f32 / 10.0).ceil() as u32);
+        comment_max_pages
+            .push((full_comments.len() as f32 / COMMENT_CAPACITY_PER_PAGE as f32).ceil() as u32);
         let page_one_comments = match comment_max_pages.last().unwrap() {
             1 => full_comments,
-            _ => full_comments[..10].to_vec(),
+            _ => full_comments[..COMMENT_CAPACITY_PER_PAGE as usize].to_vec(),
         };
         comments.push(page_one_comments);
     }
@@ -660,7 +677,7 @@ async fn respond_comment(
         .await
         .unwrap();
 
-    let max_page = (full_comments.len() as f32 / 10.0).ceil() as u32;
+    let max_page = (full_comments.len() as f32 / COMMENT_CAPACITY_PER_PAGE as f32).ceil() as u32;
 
     if page > max_page {
         return Err(Status::NotFound);
@@ -668,8 +685,13 @@ async fn respond_comment(
 
     let comments = match max_page {
         1 => &full_comments[..],
-        _ if page == max_page => &full_comments[(page - 1) as usize * 10..],
-        _ => &full_comments[(page - 1) as usize * 10..(page * 10) as usize],
+        _ if page == max_page => {
+            &full_comments[((page - 1) * COMMENT_CAPACITY_PER_PAGE) as usize..]
+        }
+        _ => {
+            &full_comments[((page - 1) * COMMENT_CAPACITY_PER_PAGE) as usize
+                ..(page * COMMENT_CAPACITY_PER_PAGE) as usize]
+        }
     };
 
     let mut users: Vec<User> = Vec::new();
@@ -712,7 +734,8 @@ async fn respond_user(
                 .await
                 .unwrap();
 
-            let max_page = (full_records.len() as f32 / 30.0).ceil() as u32;
+            let max_page =
+                (full_records.len() as f32 / USER_RECORD_CAPACITY_PER_PAGE as f32).ceil() as u32;
 
             if page > max_page {
                 return Err(Status::NotFound);
@@ -720,8 +743,13 @@ async fn respond_user(
 
             let records = match max_page {
                 1 => &full_records[..],
-                _ if page == max_page => &full_records[(page - 1) as usize * 30..],
-                _ => &full_records[(page - 1) as usize * 30..(page * 30) as usize],
+                _ if page == max_page => {
+                    &full_records[((page - 1) * USER_RECORD_CAPACITY_PER_PAGE) as usize..]
+                }
+                _ => {
+                    &full_records[((page - 1) * USER_RECORD_CAPACITY_PER_PAGE) as usize
+                        ..(page * USER_RECORD_CAPACITY_PER_PAGE) as usize]
+                }
             };
 
             Ok(Json(json!({
