@@ -15,7 +15,7 @@ const COMMENT_CAPACITY_PER_PAGE: u32 = 10;
 const USER_RECORD_CAPACITY_PER_PAGE: u32 = 30;
 const ADMIN_LOG_CAPACITY_PER_PAGE: u32 = 50;
 
-struct CORS;
+struct CustomHeaders;
 
 #[database("vault")]
 struct Vault(rusqlite::Connection);
@@ -805,10 +805,10 @@ async fn rickroll() -> Html<&'static str> {
 
 // https://stackoverflow.com/a/64904947/10144204
 #[rocket::async_trait]
-impl Fairing for CORS {
+impl Fairing for CustomHeaders {
     fn info(&self) -> Info {
         Info {
-            name: "Add CORS headers to responses",
+            name: "Add custom headers to responses",
             kind: Kind::Response,
         }
     }
@@ -816,12 +816,13 @@ impl Fairing for CORS {
     async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
         response.set_header(Header::new("Access-Control-Allow-Methods", "GET"));
+        response.set_header(Header::new("Cache-Control", "max-age=14400"));
     }
 }
 
 #[launch]
 fn rocket() -> _ {
-    rocket::build().attach(Vault::fairing()).attach(CORS).mount(
+    rocket::build().attach(Vault::fairing()).attach(CustomHeaders).mount(
         "/",
         routes![
             respond_thread,
