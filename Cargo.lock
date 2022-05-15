@@ -195,7 +195,7 @@ dependencies = [
 
 [[package]]
 name = "ex_nihilo_vault"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "rocket",
  "rocket_sync_db_pools",
