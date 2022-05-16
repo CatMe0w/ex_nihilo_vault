@@ -1,5 +1,5 @@
 [global]
-address = "127.0.0.1"
+address = "0.0.0.0"
 
 [default.databases.vault]
 url = "vault.db"
