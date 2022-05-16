@@ -6,6 +6,14 @@ Project Ex Nihilo: backend "Vault"
 
 ## Quick start
 
+### Use containers
+
+```
+docker run -d --name ex_nihilo_vault -p 127.0.0.1:8000:8000 --restart always ghcr.io/catme0w/ex_nihilo_vault
+```
+
+### Don't use containers
+
 Rust is required.
 
 ```
@@ -18,6 +26,8 @@ cargo run --release
 ## Get `vault.db`
 
 Running ex_nihilo_vault requires the `vault.db` file, which is the dataset for Project Ex Nihilo.
+
+Note: The prebuilt container images already packaged `vault.db`. If you use the prebuilt images, you can ignore this section.
 
 ### Download directly
 
@@ -39,6 +49,12 @@ https://github.com/CatMe0w/backstage_uncover/releases/download/trigger-1/uncover
 8. `cd ex_nihilo_vault`
 9. Put `vault.db` here
 10. `cargo run --release`
+
+## Caveats
+
+- Do not build for `x86_64-unknown-linux-musl` target or the executable will exit immediately with a segmentation fault.
+- ex_nihilo_vault does not provide a TLS support. You need to use a nginx/apache/caddy/etc. reverse proxy to provide HTTPS access.
+- Change the `address` field to `127.0.0.1` in `Rocket.toml` if you do not want to use containers or configure firewalls.
 
 ## License
 
