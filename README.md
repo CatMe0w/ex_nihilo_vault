@@ -6,13 +6,13 @@ Project Ex Nihilo: backend "Vault"
 
 ## Quick start
 
-### Use containers
+### With containers
 
 ```
 docker run -d --name ex_nihilo_vault -p 127.0.0.1:8000:8000 --restart always ghcr.io/catme0w/ex_nihilo_vault
 ```
 
-### Don't use containers
+### Without containers
 
 Rust is required.
 
